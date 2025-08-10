@@ -2,6 +2,20 @@
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
+fn handle_command(buffer: &[u8; 512], count: usize) -> Result<Vec<u8>, std::str::Utf8Error> {
+    let packet = std::str::from_utf8(&buffer[..count])?;
+    let tokens = packet.split("\r\n").collect::<Vec<_>>();
+
+    let command = tokens[2];
+    if command.eq_ignore_ascii_case("PING") {
+        Ok(b"+PONG\r\n".to_vec())
+    } else if command.eq_ignore_ascii_case("ECHO") {
+        Ok(tokens[3..].join("\r\n").into_bytes())
+    } else {
+        panic!("Invalid command")
+    }
+}
+
 #[tokio::main]
 async fn main() {
     // You can use print statements as follows for debugging, they'll be visible when running tests.
@@ -21,7 +35,13 @@ async fn main() {
                             break;
                         }
 
-                        stream.write_all(b"+PONG\r\n").await.unwrap();
+                        match handle_command(&buffer, bytes) {
+                            Ok(result) => stream.write_all(&result).await.unwrap(),
+                            Err(err) => {
+                                println!("Errored: {:?}", err);
+                                break;
+                            }
+                        }
                     }
                 });
             }
