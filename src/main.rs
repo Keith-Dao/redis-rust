@@ -1,18 +1,39 @@
 #![allow(unused_imports)]
+use anyhow::Result;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpListener;
+use tokio::net::{TcpListener, TcpStream};
 
-fn handle_command(buffer: &[u8; 512], count: usize) -> Result<Vec<u8>, std::str::Utf8Error> {
-    let packet = std::str::from_utf8(&buffer[..count])?;
-    let tokens = packet.split("\r\n").collect::<Vec<_>>();
+mod resp;
 
-    let command = tokens[2];
-    if command.eq_ignore_ascii_case("PING") {
-        Ok(b"+PONG\r\n".to_vec())
-    } else if command.eq_ignore_ascii_case("ECHO") {
-        Ok(tokens[3..].join("\r\n").into_bytes())
-    } else {
-        panic!("Invalid command")
+fn unpack_string(message: &resp::RespType) -> Result<String> {
+    match message {
+        resp::RespType::BulkString(s) | resp::RespType::SimpleString(s) => Ok(s.clone()),
+        _ => Err(anyhow::anyhow!("Cannot unpack: {:?}", message)),
+    }
+}
+
+fn extract_command(message: resp::RespType) -> Result<(String, Vec<resp::RespType>)> {
+    match message {
+        resp::RespType::Array(vec) => Ok((
+            unpack_string(&vec[0]).unwrap(),
+            vec.into_iter().skip(1).collect(),
+        )),
+        _ => Err(anyhow::anyhow!("Invalid command: {:?}", message)),
+    }
+}
+
+async fn handle_stream(stream: TcpStream) {
+    let mut handler = resp::RespHandler::new(stream);
+
+    while let Ok(Some(message)) = handler.read_stream().await {
+        let (command, args) = extract_command(message).unwrap();
+        let response = match command.to_lowercase().as_str() {
+            "ping" => resp::RespType::BulkString("PONG".to_string()),
+            "echo" => args[0].clone(),
+            _ => panic!("Invalid redis command: {:?}", command),
+        };
+
+        handler.write_stream(response).await.unwrap();
     }
 }
 
@@ -25,24 +46,11 @@ async fn main() {
 
     loop {
         match listener.accept().await {
-            Ok((mut stream, _)) => {
+            Ok((stream, _)) => {
                 println!("accepted new connection");
 
                 tokio::spawn(async move {
-                    let mut buffer = [0; 512];
-                    while let Ok(bytes) = stream.read(&mut buffer).await {
-                        if bytes == 0 {
-                            break;
-                        }
-
-                        match handle_command(&buffer, bytes) {
-                            Ok(result) => stream.write_all(&result).await.unwrap(),
-                            Err(err) => {
-                                println!("Errored: {:?}", err);
-                                break;
-                            }
-                        }
-                    }
+                    handle_stream(stream).await;
                 });
             }
             Err(e) => {
