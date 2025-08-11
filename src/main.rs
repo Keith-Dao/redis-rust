@@ -28,7 +28,7 @@ async fn handle_stream(stream: TcpStream) {
     while let Ok(Some(message)) = handler.read_stream().await {
         let (command, args) = extract_command(message).unwrap();
         let response = match command.to_lowercase().as_str() {
-            "ping" => resp::RespType::BulkString("PONG".to_string()),
+            "ping" => resp::RespType::SimpleString("PONG".to_string()),
             "echo" => args[0].clone(),
             _ => panic!("Invalid redis command: {:?}", command),
         };
