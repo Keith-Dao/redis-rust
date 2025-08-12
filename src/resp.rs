@@ -58,12 +58,12 @@ fn parse_bulk_string(buffer: BytesMut) -> Result<(RespType, usize)> {
             ));
         };
 
-    return Ok((
+    Ok((
         RespType::BulkString(String::from_utf8(
             buffer[bytes_consumed..bytes_consumed + string_length].to_vec(),
         )?),
         bytes_consumed + string_length + 2,
-    ));
+    ))
 }
 
 fn parse_array(buffer: BytesMut) -> Result<(RespType, usize)> {
@@ -119,7 +119,7 @@ impl RespHandler {
     }
 
     pub async fn write_stream(&mut self, value: RespType) -> Result<()> {
-        self.stream.write(value.serialise().as_bytes()).await?;
+        self.stream.write_all(value.serialise().as_bytes()).await?;
         Ok(())
     }
 }
