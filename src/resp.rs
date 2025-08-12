@@ -7,6 +7,7 @@ pub enum RespType {
     SimpleString(String),
     BulkString(String),
     Array(Vec<RespType>),
+    Null(),
 }
 
 impl RespType {
@@ -14,6 +15,7 @@ impl RespType {
         match self {
             Self::SimpleString(s) => format!("+{}\r\n", s),
             Self::BulkString(s) => format!("${}\r\n{}\r\n", s.len(), s),
+            Self::Null() => "$-1\r\n".to_string(),
             _ => panic!("Invalid type to serialise."),
         }
     }
