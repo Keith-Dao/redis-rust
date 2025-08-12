@@ -3,9 +3,10 @@ use anyhow::Result;
 use std::boxed::Box;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::RwLock;
+use tokio::sync::Mutex;
 
 mod resp;
 
@@ -26,58 +27,67 @@ fn extract_command(message: resp::RespType) -> Result<(String, Vec<resp::RespTyp
     }
 }
 
-async fn handle_set(
-    args: Vec<resp::RespType>,
-    store: &Arc<RwLock<Box<HashMap<String, String>>>>,
-) -> resp::RespType {
-    let num_required_args = 2;
-    if args.len() < num_required_args {
-        panic!(
-            "Invalid number of SET arguments. Expected {}, got: {}",
-            num_required_args,
-            args.len()
-        );
-    }
+type Store = Arc<Mutex<Box<HashMap<String, (String, Option<Instant>)>>>>;
 
-    let mut store = store.write().await;
-    let (key, value) =
-        if let (Ok(key), Ok(value)) = (unpack_string(&args[0]), unpack_string(&args[1])) {
-            (key, value)
-        } else {
-            panic!("Invalid SET arguments: {:?}", args);
-        };
-    store.insert(key, value);
+async fn handle_set(args: Vec<resp::RespType>, store: &Store) -> resp::RespType {
+    match args.as_slice() {
+        [key, value] | [key, value, ..] => {
+            let (key, value) = match (unpack_string(key), unpack_string(value)) {
+                (Ok(key), Ok(value)) => (key, value),
+                _ => panic!("Invalid SET arguments: {:?}", args),
+            };
 
-    resp::RespType::SimpleString("OK".to_string())
-}
+            let deletion_instant = match args.get(2..4) {
+                Some([param, duration]) => match (unpack_string(param), unpack_string(duration)) {
+                    (Ok(param), Ok(duration)) if param.to_lowercase() == "px" => {
+                        match duration.parse::<u64>() {
+                            Ok(milliseconds) => {
+                                Some(Instant::now() + Duration::from_millis(milliseconds))
+                            }
+                            _ => None,
+                        }
+                    }
+                    _ => None,
+                },
+                _ => None,
+            };
 
-async fn handle_get(
-    args: Vec<resp::RespType>,
-    store: &Arc<RwLock<Box<HashMap<String, String>>>>,
-) -> resp::RespType {
-    let num_required_args = 1;
-    if args.len() < num_required_args {
-        panic!(
-            "Invalid number of GET arguments. Expected {}, got: {}",
-            num_required_args,
-            args.len()
-        );
-    }
+            let mut store = store.lock().await;
+            store.insert(key, (value, deletion_instant));
 
-    let store = store.read().await;
-    let key = if let Ok(key) = unpack_string(&args[0]) {
-        key
-    } else {
-        panic!("Invalid GET arguments: {:?}", args);
-    };
+            resp::RespType::SimpleString("OK".to_string())
+        }
 
-    match store.get(&key) {
-        Some(value) => resp::RespType::BulkString(value.clone()),
-        None => resp::RespType::Null(),
+        _ => panic!("Invalid"),
     }
 }
 
-async fn handle_stream(stream: TcpStream, store: Arc<RwLock<Box<HashMap<String, String>>>>) {
+async fn handle_get(args: Vec<resp::RespType>, store: &Store) -> resp::RespType {
+    match args.as_slice() {
+        [key] | [key, ..] => {
+            let key = match unpack_string(key) {
+                Ok(key) => key,
+                _ => panic!("Invalid GET arguments: {:?}", args),
+            };
+
+            let mut store = store.lock().await;
+            match store.get(&key) {
+                Some((value, deletion_time)) => match deletion_time {
+                    Some(deletion_time) if deletion_time <= &Instant::now() => {
+                        store.remove(&key);
+                        resp::RespType::Null()
+                    }
+                    _ => resp::RespType::BulkString(value.clone()),
+                },
+                None => resp::RespType::Null(),
+            }
+        }
+
+        _ => panic!("Invalid"),
+    }
+}
+
+async fn handle_stream(stream: TcpStream, store: Store) {
     let mut handler = resp::RespHandler::new(stream);
 
     while let Ok(Some(message)) = handler.read_stream().await {
@@ -100,7 +110,7 @@ async fn main() {
     println!("Logs from your program will appear here!");
 
     let listener = TcpListener::bind("127.0.0.1:6379").await.unwrap();
-    let store = Arc::new(RwLock::new(std::boxed::Box::new(
+    let store = Arc::new(Mutex::new(std::boxed::Box::new(
         std::collections::HashMap::new(),
     )));
 
