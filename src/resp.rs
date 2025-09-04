@@ -1,5 +1,6 @@
 use anyhow::Result;
-use bytes::BytesMut;
+use bytes::{Buf, BytesMut};
+use log::trace;
 use tokio::{io::AsyncReadExt, io::AsyncWriteExt, net::TcpStream};
 
 #[derive(Debug, Clone)]
@@ -27,79 +28,82 @@ impl RespType {
 
 /// Reads bytes from a buffer until a `\r\n` sequence is found.
 /// Returns the slice before `\r\n` and the total bytes consumed including `\r\n`.
-fn read_until_crlf(buffer: &[u8]) -> Option<(&[u8], usize)> {
+fn read_until_crlf(buffer: &mut BytesMut) -> Option<BytesMut> {
+    trace!("Reading buffer until first CRLF: {:?}.", buffer);
     for i in 1..buffer.len() {
         if buffer[i - 1] == b'\r' && buffer[i] == b'\n' {
-            return Some((&buffer[..i - 1], i + 1));
+            let result = buffer.split_to(i - 1);
+            buffer.advance(2); // Skip CRLF
+            return Some(result);
         }
     }
     None
 }
 
 /// Parses a byte slice into an integer.
-fn parse_num(buffer: &[u8]) -> Result<i64> {
+fn parse_num(buffer: BytesMut) -> Result<i64> {
+    trace!("Attempting to parse number from buffer: {:?}.", buffer);
     String::from_utf8(buffer.to_vec())?
         .parse::<i64>()
         .map_err(|e| anyhow::anyhow!(e))
 }
 
 /// Parses the buffer for a simple string.
-fn parse_simple_string(buffer: BytesMut) -> Result<(RespType, usize)> {
-    if let Some((message, bytes_used)) = read_until_crlf(&buffer[1..]) {
-        return Ok((
-            RespType::SimpleString(String::from_utf8(message.to_vec())?),
-            bytes_used,
-        ));
+fn parse_simple_string(buffer: &mut BytesMut) -> Result<RespType> {
+    trace!("Parsing simple string: {:?}.", buffer);
+    if let Some(message) = read_until_crlf(buffer) {
+        return Ok(RespType::SimpleString(String::from_utf8(message.to_vec())?));
     }
 
     Err(anyhow::anyhow!("Invalid simple string: {:?}.", buffer))
 }
 
 /// Parses a buffer for a bulk string.
-fn parse_bulk_string(buffer: BytesMut) -> Result<(RespType, usize)> {
-    let (string_length, bytes_consumed) =
-        if let Some((message, bytes_used)) = read_until_crlf(&buffer[1..]) {
-            (parse_num(message)? as usize, bytes_used + 1)
-        } else {
-            return Err(anyhow::anyhow!(
-                "Bulk string missing length segment: {:?}.",
-                buffer
-            ));
-        };
+fn parse_bulk_string(buffer: &mut BytesMut) -> Result<RespType> {
+    trace!("Parsing bulk string: {:?}", buffer);
+    let expected_message_length = parse_num(read_until_crlf(buffer).expect(&format!(
+        "Bulk string missing length segment: {:?}.",
+        buffer
+    )))? as usize;
 
-    Ok((
-        RespType::BulkString(String::from_utf8(
-            buffer[bytes_consumed..bytes_consumed + string_length].to_vec(),
-        )?),
-        bytes_consumed + string_length + 2,
-    ))
+    let message =
+        read_until_crlf(buffer).expect(&format!("Bulk string message missing: {:?}.", buffer));
+    if expected_message_length != message.len() {
+        return Err(anyhow::anyhow!(
+            "Message did not match the expected length. Expected: {}, got {}.",
+            expected_message_length,
+            message.len()
+        ));
+    }
+
+    Ok(RespType::BulkString(String::from_utf8(message.to_vec())?))
 }
 
 /// Parses a buffer for an array.
-fn parse_array(buffer: BytesMut) -> Result<(RespType, usize)> {
-    let (array_length, mut bytes_consumed) =
-        if let Some((message, bytes_used)) = read_until_crlf(&buffer[1..]) {
-            (parse_num(message)?, bytes_used + 1)
-        } else {
-            return Err(anyhow::anyhow!(
-                "Array missing length segment: {:?}.",
-                buffer
-            ));
-        };
+fn parse_array(buffer: &mut BytesMut) -> Result<RespType> {
+    trace!("Parsing array: {:?}", buffer);
+    let array_length = if let Some(message) = read_until_crlf(buffer) {
+        parse_num(message)? as usize
+    } else {
+        return Err(anyhow::anyhow!(
+            "Array missing length segment: {:?}.",
+            buffer
+        ));
+    };
 
     let mut messages = vec![];
     for _ in 0..array_length {
-        let (message, bytes_used) = parse_message(BytesMut::from(&buffer[bytes_consumed..]))?;
-        bytes_consumed += bytes_used;
+        let message = parse_message(buffer)?;
         messages.push(message);
     }
 
-    Ok((RespType::Array(messages), bytes_consumed))
+    Ok(RespType::Array(messages))
 }
 
 /// Parses a buffer for the message.
-fn parse_message(buffer: BytesMut) -> Result<(RespType, usize)> {
-    match buffer[0] as char {
+fn parse_message(buffer: &mut BytesMut) -> Result<RespType> {
+    trace!("Parsing message: {:?}.", buffer);
+    match buffer.split_to(1)[0] as char {
         '+' => parse_simple_string(buffer),
         '$' => parse_bulk_string(buffer),
         '*' => parse_array(buffer),
@@ -128,7 +132,7 @@ impl RespHandler {
         if bytes == 0 {
             Ok(None)
         } else {
-            Ok(Some(parse_message(self.buffer.split())?.0))
+            Ok(Some(parse_message(&mut self.buffer)?))
         }
     }
 
