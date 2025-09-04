@@ -3,6 +3,7 @@ use bytes::BytesMut;
 use tokio::{io::AsyncReadExt, io::AsyncWriteExt, net::TcpStream};
 
 #[derive(Debug, Clone)]
+/// Represents a RESP (Redis Serialization Protocol) data type.
 pub enum RespType {
     SimpleString(String),
     BulkString(String),
@@ -11,6 +12,7 @@ pub enum RespType {
 }
 
 impl RespType {
+    /// Serialises the RESP into a RESP-compliant string.
     pub fn serialise(&self) -> String {
         match self {
             Self::SimpleString(s) => format!("+{}\r\n", s),
@@ -21,6 +23,8 @@ impl RespType {
     }
 }
 
+/// Reads bytes from a buffer until a `\r\n` sequence is found.
+/// Returns the slice before `\r\n` and the total bytes consumed including `\r\n`.
 fn read_until_crlf(buffer: &[u8]) -> Option<(&[u8], usize)> {
     for i in 1..buffer.len() {
         if buffer[i - 1] == b'\r' && buffer[i] == b'\n' {
@@ -30,12 +34,14 @@ fn read_until_crlf(buffer: &[u8]) -> Option<(&[u8], usize)> {
     None
 }
 
+/// Parses a byte slice into an integer.
 fn parse_num(buffer: &[u8]) -> Result<i64> {
     String::from_utf8(buffer.to_vec())?
         .parse::<i64>()
         .map_err(|e| anyhow::anyhow!(e))
 }
 
+/// Parses the buffer for a simple string.
 fn parse_simple_string(buffer: BytesMut) -> Result<(RespType, usize)> {
     if let Some((message, bytes_used)) = read_until_crlf(&buffer[1..]) {
         return Ok((
@@ -47,6 +53,7 @@ fn parse_simple_string(buffer: BytesMut) -> Result<(RespType, usize)> {
     Err(anyhow::anyhow!("Invalid simple string: {:?}.", buffer))
 }
 
+/// Parses a buffer for a bulk string.
 fn parse_bulk_string(buffer: BytesMut) -> Result<(RespType, usize)> {
     let (string_length, bytes_consumed) =
         if let Some((message, bytes_used)) = read_until_crlf(&buffer[1..]) {
@@ -66,6 +73,7 @@ fn parse_bulk_string(buffer: BytesMut) -> Result<(RespType, usize)> {
     ))
 }
 
+/// Parses a buffer for an array.
 fn parse_array(buffer: BytesMut) -> Result<(RespType, usize)> {
     let (array_length, mut bytes_consumed) =
         if let Some((message, bytes_used)) = read_until_crlf(&buffer[1..]) {
@@ -87,6 +95,7 @@ fn parse_array(buffer: BytesMut) -> Result<(RespType, usize)> {
     Ok((RespType::Array(messages), bytes_consumed))
 }
 
+/// Parses a buffer for the message.
 fn parse_message(buffer: BytesMut) -> Result<(RespType, usize)> {
     match buffer[0] as char {
         '+' => parse_simple_string(buffer),
@@ -96,12 +105,14 @@ fn parse_message(buffer: BytesMut) -> Result<(RespType, usize)> {
     }
 }
 
+/// Handles reading and writing RESP messages over a TCP stream.
 pub struct RespHandler {
     stream: TcpStream,
     buffer: BytesMut,
 }
 
 impl RespHandler {
+    /// Creates a new RESP handler.
     pub fn new(stream: TcpStream) -> Self {
         Self {
             stream,
@@ -109,6 +120,7 @@ impl RespHandler {
         }
     }
 
+    /// Reads a RESP message from the TCP stream.
     pub async fn read_stream(&mut self) -> Result<Option<RespType>> {
         let bytes = self.stream.read_buf(&mut self.buffer).await?;
         if bytes == 0 {
@@ -118,6 +130,7 @@ impl RespHandler {
         }
     }
 
+    /// Writes a RESP message to the TCP stream.
     pub async fn write_stream(&mut self, value: RespType) -> Result<()> {
         self.stream.write_all(value.serialise().as_bytes()).await?;
         Ok(())
