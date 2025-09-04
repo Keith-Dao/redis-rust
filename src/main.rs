@@ -75,11 +75,11 @@ async fn handle_get(args: Vec<resp::RespType>, store: &Store) -> resp::RespType 
                 Some((value, deletion_time)) => match deletion_time {
                     Some(deletion_time) if deletion_time <= &Instant::now() => {
                         store.remove(&key);
-                        resp::RespType::Null()
+                        resp::RespType::NullArray()
                     }
                     _ => resp::RespType::BulkString(value.clone()),
                 },
-                None => resp::RespType::Null(),
+                None => resp::RespType::NullArray(),
             }
         }
 
