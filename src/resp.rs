@@ -1,7 +1,7 @@
+//! This module contains the RESP (Redis Serialization Protocol) data types.
 use anyhow::Result;
 use bytes::{Buf, BytesMut};
 use log::trace;
-use tokio::{io::AsyncReadExt, io::AsyncWriteExt, net::TcpStream};
 
 #[derive(Debug, Clone)]
 /// Represents a RESP (Redis Serialization Protocol) data type.
@@ -101,44 +101,12 @@ fn parse_array(buffer: &mut BytesMut) -> Result<RespType> {
 }
 
 /// Parses a buffer for the message.
-fn parse_message(buffer: &mut BytesMut) -> Result<RespType> {
+pub fn parse_message(buffer: &mut BytesMut) -> Result<RespType> {
     trace!("Parsing message: {:?}.", buffer);
     match buffer.split_to(1)[0] as char {
         '+' => parse_simple_string(buffer),
         '$' => parse_bulk_string(buffer),
         '*' => parse_array(buffer),
         _ => Err(anyhow::anyhow!("Invalid message type.")),
-    }
-}
-
-/// Handles reading and writing RESP messages over a TCP stream.
-pub struct RespHandler {
-    stream: TcpStream,
-    buffer: BytesMut,
-}
-
-impl RespHandler {
-    /// Creates a new RESP handler.
-    pub fn new(stream: TcpStream) -> Self {
-        Self {
-            stream,
-            buffer: BytesMut::with_capacity(512),
-        }
-    }
-
-    /// Reads a RESP message from the TCP stream.
-    pub async fn read_stream(&mut self) -> Result<Option<RespType>> {
-        let bytes = self.stream.read_buf(&mut self.buffer).await?;
-        if bytes == 0 {
-            Ok(None)
-        } else {
-            Ok(Some(parse_message(&mut self.buffer)?))
-        }
-    }
-
-    /// Writes a RESP message to the TCP stream.
-    pub async fn write_stream(&mut self, value: RespType) -> Result<()> {
-        self.stream.write_all(value.serialise().as_bytes()).await?;
-        Ok(())
     }
 }
