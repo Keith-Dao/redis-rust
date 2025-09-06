@@ -86,6 +86,17 @@ async fn handle_get(args: Vec<resp::RespType>, store: &store::Store) -> resp::Re
     }
 }
 
+async fn get_response(message: resp::RespType, store: &store::Store) -> resp::RespType {
+    let (command, args) = extract_command(message).unwrap();
+    match command.to_lowercase().as_str() {
+        "ping" => resp::RespType::SimpleString("PONG".to_string()),
+        "echo" => args[0].clone(),
+        "set" => handle_set(args, &store).await,
+        "get" => handle_get(args, &store).await,
+        _ => panic!("Invalid redis command: {:?}", command),
+    }
+}
+
 /// Handles reading and writing RESP messages over a TCP stream.
 pub struct RespHandler {
     stream: TcpStream,
@@ -120,15 +131,7 @@ impl RespHandler {
     /// Runs the handler.
     pub async fn run(&mut self, store: store::Store) {
         while let Ok(Some(message)) = self.read_stream().await {
-            let (command, args) = extract_command(message).unwrap();
-            let response = match command.to_lowercase().as_str() {
-                "ping" => resp::RespType::SimpleString("PONG".to_string()),
-                "echo" => args[0].clone(),
-                "set" => handle_set(args, &store).await,
-                "get" => handle_get(args, &store).await,
-                _ => panic!("Invalid redis command: {:?}", command),
-            };
-
+            let response = get_response(message, &store).await;
             self.write_stream(response).await.unwrap();
         }
     }
