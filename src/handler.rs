@@ -8,7 +8,7 @@ use tokio::{io::AsyncReadExt, io::AsyncWriteExt, net::TcpStream};
 /// Extracts the string from the message.
 fn extract_string(message: &resp::RespType) -> Result<String> {
     match message {
-        resp::RespType::BulkString(s) | resp::RespType::SimpleString(s) => Ok(s.clone()),
+        resp::RespType::BulkString(Some(s)) | resp::RespType::SimpleString(s) => Ok(s.clone()),
         _ => Err(anyhow::anyhow!("Cannot unpack: {:?}", message)),
     }
 }
@@ -74,11 +74,11 @@ async fn handle_get(args: Vec<resp::RespType>, store: &store::Store) -> resp::Re
                 Some((value, deletion_time)) => match deletion_time {
                     Some(deletion_time) if deletion_time <= &Instant::now() => {
                         store.remove(&key);
-                        resp::RespType::NullArray()
+                        resp::RespType::BulkString(None)
                     }
-                    _ => resp::RespType::BulkString(value.clone()),
+                    _ => resp::RespType::BulkString(Some(value.clone())),
                 },
-                None => resp::RespType::NullArray(),
+                None => resp::RespType::BulkString(None),
             }
         }
 
@@ -118,13 +118,13 @@ impl RespHandler {
         if bytes == 0 {
             Ok(None)
         } else {
-            Ok(Some(resp::parse_message(&mut self.buffer)?))
+            Ok(Some(resp::RespType::from_bytes(&mut self.buffer)?))
         }
     }
 
     /// Writes a RESP message to the TCP stream.
     pub async fn write_stream(&mut self, value: resp::RespType) -> Result<()> {
-        self.stream.write_all(value.serialise().as_bytes()).await?;
+        self.stream.write_all(value.serialize().as_bytes()).await?;
         Ok(())
     }
 
