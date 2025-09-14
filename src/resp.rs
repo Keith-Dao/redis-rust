@@ -37,6 +37,82 @@ pub enum RespType {
 }
 
 impl RespType {
+    /// Parses the buffer for a simple string.
+    fn parse_simple_string(buffer: &mut BytesMut) -> Result<RespType> {
+        trace!("Parsing simple string: {:?}.", buffer);
+        if let Some(message) = read_until_crlf(buffer) {
+            return Ok(RespType::SimpleString(String::from_utf8(message.to_vec())?));
+        }
+
+        Err(anyhow::anyhow!("Invalid simple string: {:?}.", buffer))
+    }
+
+    /// Parses a buffer for a bulk string.
+    fn parse_bulk_string(buffer: &mut BytesMut) -> Result<RespType> {
+        trace!("Parsing bulk string: {:?}", buffer);
+        let expected_message_length = parse_num(read_until_crlf(buffer).expect(&format!(
+            "Bulk string missing length segment: {:?}.",
+            buffer
+        )))? as usize;
+
+        if buffer.len() < expected_message_length {
+            return Err(anyhow::anyhow!(
+                "Message did not match the expected length. Expected: {}, got: {}.",
+                expected_message_length,
+                buffer.len()
+            ));
+        }
+
+        let message = String::from_utf8(buffer.split_to(expected_message_length).to_vec())?;
+        if buffer.len() < 2 || buffer.split_to(2).as_ref() != b"\r\n" {
+            return Err(anyhow::anyhow!("Expected CRLF."));
+        }
+        Ok(RespType::BulkString(Some(message)))
+    }
+
+    /// Parses a buffer for an array.
+    fn parse_array(buffer: &mut BytesMut) -> Result<RespType> {
+        trace!("Parsing array: {:?}", buffer);
+        let array_length = if let Some(message) = read_until_crlf(buffer) {
+            parse_num(message)? as usize
+        } else {
+            return Err(anyhow::anyhow!(
+                "Array missing length segment: {:?}.",
+                buffer
+            ));
+        };
+
+        let mut messages = vec![];
+        for _ in 0..array_length {
+            let message = RespType::from_bytes(buffer).with_context(|| {
+                format!(
+                    "Message did not match expected length. Expected: {}, got: {}.",
+                    array_length,
+                    messages.len()
+                )
+            })?;
+            messages.push(message);
+        }
+
+        Ok(RespType::Array(messages))
+    }
+
+    /// Parses a buffer for the message.
+    pub fn from_bytes(buffer: &mut BytesMut) -> Result<RespType> {
+        trace!("Parsing message: {:?}.", buffer);
+        if let Some((&first_byte, _)) = buffer.split_first() {
+            _ = buffer.split_to(1);
+            match first_byte as char {
+                '+' => RespType::parse_simple_string(buffer),
+                '$' => RespType::parse_bulk_string(buffer),
+                '*' => RespType::parse_array(buffer),
+                _ => Err(anyhow::anyhow!("Invalid message type.")),
+            }
+        } else {
+            Err(anyhow::anyhow!("Buffer empty."))
+        }
+    }
+
     /// Serializes the RESP into a RESP-compliant string.
     pub fn serialize(&self) -> String {
         match self {
@@ -46,82 +122,6 @@ impl RespType {
             Self::Null() => "_\r\n".to_string(),
             _ => panic!("Invalid type to serialise."),
         }
-    }
-}
-
-/// Parses the buffer for a simple string.
-fn parse_simple_string(buffer: &mut BytesMut) -> Result<RespType> {
-    trace!("Parsing simple string: {:?}.", buffer);
-    if let Some(message) = read_until_crlf(buffer) {
-        return Ok(RespType::SimpleString(String::from_utf8(message.to_vec())?));
-    }
-
-    Err(anyhow::anyhow!("Invalid simple string: {:?}.", buffer))
-}
-
-/// Parses a buffer for a bulk string.
-fn parse_bulk_string(buffer: &mut BytesMut) -> Result<RespType> {
-    trace!("Parsing bulk string: {:?}", buffer);
-    let expected_message_length = parse_num(read_until_crlf(buffer).expect(&format!(
-        "Bulk string missing length segment: {:?}.",
-        buffer
-    )))? as usize;
-
-    if buffer.len() < expected_message_length {
-        return Err(anyhow::anyhow!(
-            "Message did not match the expected length. Expected: {}, got: {}.",
-            expected_message_length,
-            buffer.len()
-        ));
-    }
-
-    let message = String::from_utf8(buffer.split_to(expected_message_length).to_vec())?;
-    if buffer.len() < 2 || buffer.split_to(2).as_ref() != b"\r\n" {
-        return Err(anyhow::anyhow!("Expected CRLF."));
-    }
-    Ok(RespType::BulkString(Some(message)))
-}
-
-/// Parses a buffer for an array.
-fn parse_array(buffer: &mut BytesMut) -> Result<RespType> {
-    trace!("Parsing array: {:?}", buffer);
-    let array_length = if let Some(message) = read_until_crlf(buffer) {
-        parse_num(message)? as usize
-    } else {
-        return Err(anyhow::anyhow!(
-            "Array missing length segment: {:?}.",
-            buffer
-        ));
-    };
-
-    let mut messages = vec![];
-    for _ in 0..array_length {
-        let message = parse_message(buffer).with_context(|| {
-            format!(
-                "Message did not match expected length. Expected: {}, got: {}.",
-                array_length,
-                messages.len()
-            )
-        })?;
-        messages.push(message);
-    }
-
-    Ok(RespType::Array(messages))
-}
-
-/// Parses a buffer for the message.
-pub fn parse_message(buffer: &mut BytesMut) -> Result<RespType> {
-    trace!("Parsing message: {:?}.", buffer);
-    if let Some((&first_byte, _)) = buffer.split_first() {
-        _ = buffer.split_to(1);
-        match first_byte as char {
-            '+' => parse_simple_string(buffer),
-            '$' => parse_bulk_string(buffer),
-            '*' => parse_array(buffer),
-            _ => Err(anyhow::anyhow!("Invalid message type.")),
-        }
-    } else {
-        Err(anyhow::anyhow!("Buffer empty."))
     }
 }
 
@@ -258,7 +258,7 @@ mod tests {
     // Null
     /// Tests the parser.
     fn test_parse(#[case] bytes: &[u8], #[case] expected: Result<RespType>) {
-        let result = parse_message(&mut bytes.into());
+        let result = RespType::from_bytes(&mut bytes.into());
         assert_eq!(expected.is_ok(), result.is_ok());
         if expected.is_ok() {
             assert_eq!(expected.unwrap(), result.unwrap());
