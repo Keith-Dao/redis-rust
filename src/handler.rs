@@ -2,8 +2,11 @@
 use crate::{resp, store};
 use anyhow::Result;
 use bytes::BytesMut;
-use std::time::{Duration, Instant};
-use tokio::{io::AsyncReadExt, io::AsyncWriteExt, net::TcpStream};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::TcpStream,
+    time::{Duration, Instant},
+};
 
 /// Extracts the string from the message.
 fn extract_string(message: &resp::RespType) -> Result<String> {
@@ -51,7 +54,7 @@ async fn handle_set(args: Vec<resp::RespType>, store: &store::Store) -> resp::Re
             };
 
             let mut store = store.lock().await;
-            store.insert(key, (value, deletion_instant));
+            store.insert(key, store::Entry::new(value, deletion_instant));
 
             resp::RespType::SimpleString("OK".to_string())
         }
@@ -71,7 +74,10 @@ async fn handle_get(args: Vec<resp::RespType>, store: &store::Store) -> resp::Re
 
             let mut store = store.lock().await;
             match store.get(&key) {
-                Some((value, deletion_time)) => match deletion_time {
+                Some(store::Entry {
+                    value,
+                    deletion_time,
+                }) => match deletion_time {
                     Some(deletion_time) if deletion_time <= &Instant::now() => {
                         store.remove(&key);
                         resp::RespType::BulkString(None)
@@ -235,7 +241,7 @@ mod tests {
         let response = handle_set(args, &store).await;
         assert_eq!(response, resp::RespType::SimpleString("OK".to_string()));
 
-        let stored_value = store.lock().await.get(&key).unwrap().0.clone();
+        let stored_value = store.lock().await.get(&key).unwrap().value.clone();
         assert_eq!(stored_value, value);
     }
 
@@ -252,13 +258,14 @@ mod tests {
         let response = handle_set(args, &store).await;
         assert_eq!(response, resp::RespType::SimpleString("OK".to_string()));
 
-        let (value, deletion_instant) = store.lock().await.get(&key).unwrap().clone();
+        let store = store.lock().await;
+        let entry = store.get(&key).unwrap();
         assert_eq!(value, value);
-        assert!(deletion_instant.is_some());
+        assert!(entry.deletion_time.is_some());
 
         tokio::time::sleep(tokio::time::Duration::from_millis(duration)).await;
         assert!(
-            deletion_instant.expect("Checked it is some.") <= std::time::Instant::now(),
+            entry.deletion_time.expect("Checked it is some.") <= Instant::now(),
             "Deletion timestamp should be before now."
         );
     }
@@ -270,7 +277,7 @@ mod tests {
         store
             .lock()
             .await
-            .insert(key.clone(), (value.clone(), None));
+            .insert(key.clone(), crate::store::Entry::new(value.clone(), None));
 
         let args = vec![resp::RespType::SimpleString(key)];
         let response = handle_get(args, &store).await;
@@ -289,10 +296,10 @@ mod tests {
     #[tokio::test]
     async fn test_handle_get_expired_key(store: crate::store::Store, key: String, value: String) {
         let expiration_time = Instant::now() - Duration::from_millis(100); // Already expired
-        store
-            .lock()
-            .await
-            .insert(key.clone(), (value.clone(), Some(expiration_time)));
+        store.lock().await.insert(
+            key.clone(),
+            crate::store::Entry::new(value.clone(), Some(expiration_time)),
+        );
 
         let args = vec![resp::RespType::SimpleString(key.clone())];
         let response = handle_get(args, &store).await;
@@ -309,16 +316,16 @@ mod tests {
         value: String,
     ) {
         let expiration_time = Instant::now() + Duration::from_millis(300);
-        store
-            .lock()
-            .await
-            .insert(key.clone(), (value.clone(), Some(expiration_time)));
+        store.lock().await.insert(
+            key.clone(),
+            crate::store::Entry::new(value.clone(), Some(expiration_time)),
+        );
 
         let args = vec![resp::RespType::SimpleString(key)];
         let response = handle_get(args.clone(), &store).await;
         assert_eq!(response, resp::RespType::BulkString(Some(value)));
 
-        tokio::time::sleep_until(tokio::time::Instant::from_std(expiration_time)).await;
+        tokio::time::sleep_until(expiration_time).await;
         let response = handle_get(args, &store).await;
         assert_eq!(response, resp::RespType::BulkString(None));
         assert!(store.lock().await.get("expiredkey").is_none());
