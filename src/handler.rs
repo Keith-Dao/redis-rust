@@ -5,7 +5,6 @@ use bytes::BytesMut;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
-    time::{Duration, Instant},
 };
 
 /// Extracts the string from the message.
@@ -41,9 +40,7 @@ async fn handle_set(args: Vec<resp::RespType>, store: &store::Store) -> resp::Re
                     match (extract_string(param), extract_string(duration)) {
                         (Ok(param), Ok(duration)) if param.to_lowercase() == "px" => {
                             match duration.parse::<u64>() {
-                                Ok(milliseconds) => {
-                                    Some(Instant::now() + Duration::from_millis(milliseconds))
-                                }
+                                Ok(milliseconds) => Some(milliseconds),
                                 _ => None,
                             }
                         }
@@ -82,7 +79,7 @@ async fn handle_get(args: Vec<resp::RespType>, store: &store::Store) -> resp::Re
                     value,
                     deletion_time,
                 }) => match deletion_time {
-                    Some(deletion_time) if deletion_time <= &Instant::now() => {
+                    Some(deletion_time) if deletion_time <= &tokio::time::Instant::now() => {
                         store.remove(&key);
                         resp::RespType::BulkString(None)
                     }
@@ -269,7 +266,7 @@ mod tests {
 
         tokio::time::sleep(tokio::time::Duration::from_millis(duration)).await;
         assert!(
-            entry.deletion_time.expect("Checked it is some.") <= Instant::now(),
+            entry.deletion_time.expect("Checked it is some.") <= tokio::time::Instant::now(),
             "Deletion timestamp should be before now."
         );
     }
@@ -299,10 +296,10 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn test_handle_get_expired_key(store: crate::store::Store, key: String, value: String) {
-        let expiration_time = Instant::now() - Duration::from_millis(100); // Already expired
+        let deletion_time = 0u32;
         store.lock().await.insert(
             key.clone(),
-            crate::store::Entry::new(value.clone()).with_deletion(expiration_time),
+            crate::store::Entry::new(value.clone()).with_deletion(deletion_time),
         );
 
         let args = vec![resp::RespType::SimpleString(key.clone())];
@@ -319,17 +316,17 @@ mod tests {
         key: String,
         value: String,
     ) {
-        let expiration_time = Instant::now() + Duration::from_millis(300);
+        let deletion_time = 300;
         store.lock().await.insert(
             key.clone(),
-            crate::store::Entry::new(value.clone()).with_deletion(expiration_time),
+            crate::store::Entry::new(value.clone()).with_deletion(deletion_time),
         );
 
         let args = vec![resp::RespType::SimpleString(key)];
         let response = handle_get(args.clone(), &store).await;
         assert_eq!(response, resp::RespType::BulkString(Some(value)));
 
-        tokio::time::sleep_until(expiration_time).await;
+        tokio::time::sleep(tokio::time::Duration::from_millis(deletion_time)).await;
         let response = handle_get(args, &store).await;
         assert_eq!(response, resp::RespType::BulkString(None));
         assert!(store.lock().await.get("expiredkey").is_none());
@@ -396,7 +393,7 @@ mod tests {
             resp::RespType::SimpleString("OK".to_string())
         );
 
-        tokio::time::sleep(Duration::from_millis(20)).await;
+        tokio::time::sleep(tokio::time::Duration::from_millis(20)).await;
 
         let get_exp_message = resp::RespType::Array(vec![
             resp::RespType::SimpleString("GET".to_string()),

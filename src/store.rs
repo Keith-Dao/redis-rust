@@ -21,7 +21,10 @@ impl Entry {
     }
 
     /// Adds a deletion timer to the entry.
-    pub fn with_deletion(mut self, deletion_time: tokio::time::Instant) -> Self {
+    pub fn with_deletion<T: Into<u64>>(mut self, delete_timer_duration_ms: T) -> Self {
+        let delete_timer_duration_ms = delete_timer_duration_ms.into();
+        let deletion_time = tokio::time::Instant::now()
+            + tokio::time::Duration::from_millis(delete_timer_duration_ms);
         self.deletion_time = Some(deletion_time);
         self
     }
