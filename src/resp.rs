@@ -13,6 +13,17 @@ pub fn extract_string(message: &RespType) -> Result<String> {
     }
 }
 
+/// Extracts the command and its arguments.
+pub fn extract_command(message: RespType) -> Result<(String, Vec<RespType>)> {
+    match message {
+        RespType::Array(vec) => Ok((
+            extract_string(&vec[0]).unwrap(),
+            vec.into_iter().skip(1).collect(),
+        )),
+        _ => Err(anyhow::anyhow!("Invalid command: {:?}", message)),
+    }
+}
+
 /// Reads bytes from a buffer until a `\r\n` sequence is found.
 /// Returns the slice before `\r\n` and the total bytes consumed including `\r\n`.
 fn read_until_crlf(buffer: &mut BytesMut) -> Option<BytesMut> {
@@ -157,6 +168,51 @@ mod tests {
     #[case::null(RespType::Null())]
     fn test_extract_string_fail(#[case] message: RespType) {
         let result = extract_string(&message);
+        assert!(result.is_err());
+    }
+
+    // --- Extract command ---
+    #[rstest]
+    #[case::set_command(
+        RespType::Array(vec![
+            RespType::BulkString(Some("SET".to_string())),
+            RespType::BulkString(Some("key".to_string())),
+            RespType::BulkString(Some("value".to_string())),
+        ]),
+        "SET",
+        vec![
+            RespType::BulkString(Some("key".to_string())),
+            RespType::BulkString(Some("value".to_string())),
+        ]
+    )]
+    #[case::get_command(
+        RespType::Array(vec![
+            RespType::BulkString(Some("GET".to_string())),
+            RespType::BulkString(Some("key".to_string())),
+        ]),
+        "GET",
+        vec![RespType::BulkString(Some("key".to_string()))]
+    )]
+    #[case::no_args(
+        RespType::Array(vec![RespType::SimpleString("Test".to_string())]),
+        "Test",
+        vec![],
+    )]
+    fn test_extract_command(
+        #[case] message: RespType,
+        #[case] expected_command: String,
+        #[case] expected_args: Vec<RespType>,
+    ) {
+        let (command, args) = extract_command(message).unwrap();
+        assert_eq!(command, expected_command);
+        assert_eq!(args, expected_args);
+    }
+
+    #[rstest]
+    #[case::simple_string(RespType::SimpleString("SET".to_string()))]
+    #[case::bulk_string(RespType::BulkString(Some("SET".to_string())))]
+    fn test_extract_command_fail(#[case] message: RespType) {
+        let result = extract_command(message);
         assert!(result.is_err());
     }
 

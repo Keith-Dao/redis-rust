@@ -7,17 +7,6 @@ use tokio::{
     net::TcpStream,
 };
 
-/// Extracts the command and its arguments.
-fn extract_command(message: resp::RespType) -> Result<(String, Vec<resp::RespType>)> {
-    match message {
-        resp::RespType::Array(vec) => Ok((
-            resp::extract_string(&vec[0]).unwrap(),
-            vec.into_iter().skip(1).collect(),
-        )),
-        _ => Err(anyhow::anyhow!("Invalid command: {:?}", message)),
-    }
-}
-
 /// Parses the SET options and returns the entry if successful.
 fn parse_set_options<I: IntoIterator<Item = resp::RespType>>(iter: I) -> Result<store::Entry> {
     let mut iter = iter.into_iter();
@@ -116,7 +105,7 @@ async fn handle_get(args: Vec<resp::RespType>, store: &store::Store) -> resp::Re
 }
 
 async fn get_response(message: resp::RespType, store: &store::Store) -> resp::RespType {
-    let (command, args) = extract_command(message).unwrap();
+    let (command, args) = resp::extract_command(message).unwrap();
     match command.to_lowercase().as_str() {
         "ping" => resp::RespType::SimpleString("PONG".to_string()),
         "echo" => args[0].clone(),
@@ -185,51 +174,6 @@ mod tests {
     #[fixture]
     fn value() -> String {
         "value".to_string()
-    }
-
-    // --- Extract command ---
-    #[rstest]
-    #[case::set_command(
-        resp::RespType::Array(vec![
-            resp::RespType::BulkString(Some("SET".to_string())),
-            resp::RespType::BulkString(Some("key".to_string())),
-            resp::RespType::BulkString(Some("value".to_string())),
-        ]),
-        "SET",
-        vec![
-            resp::RespType::BulkString(Some("key".to_string())),
-            resp::RespType::BulkString(Some("value".to_string())),
-        ]
-    )]
-    #[case::get_command(
-        resp::RespType::Array(vec![
-            resp::RespType::BulkString(Some("GET".to_string())),
-            resp::RespType::BulkString(Some("key".to_string())),
-        ]),
-        "GET",
-        vec![resp::RespType::BulkString(Some("key".to_string()))]
-    )]
-    #[case::no_args(
-        resp::RespType::Array(vec![resp::RespType::SimpleString("Test".to_string())]),
-        "Test",
-        vec![],
-    )]
-    fn test_extract_command(
-        #[case] message: resp::RespType,
-        #[case] expected_command: String,
-        #[case] expected_args: Vec<resp::RespType>,
-    ) {
-        let (command, args) = extract_command(message).unwrap();
-        assert_eq!(command, expected_command);
-        assert_eq!(args, expected_args);
-    }
-
-    #[rstest]
-    #[case::simple_string(resp::RespType::SimpleString("SET".to_string()))]
-    #[case::bulk_string(resp::RespType::BulkString(Some("SET".to_string())))]
-    fn test_extract_command_fail(#[case] message: resp::RespType) {
-        let result = extract_command(message);
-        assert!(result.is_err());
     }
 
     // --- Handle SET ---
