@@ -54,7 +54,11 @@ async fn handle_set(args: Vec<resp::RespType>, store: &store::Store) -> resp::Re
             };
 
             let mut store = store.lock().await;
-            store.insert(key, store::Entry::new(value, deletion_instant));
+            let mut entry = store::Entry::new(value);
+            if let Some(deletion_time) = deletion_instant {
+                entry = entry.with_deletion(deletion_time);
+            }
+            store.insert(key, entry);
 
             resp::RespType::SimpleString("OK".to_string())
         }
@@ -277,7 +281,7 @@ mod tests {
         store
             .lock()
             .await
-            .insert(key.clone(), crate::store::Entry::new(value.clone(), None));
+            .insert(key.clone(), crate::store::Entry::new(value.clone()));
 
         let args = vec![resp::RespType::SimpleString(key)];
         let response = handle_get(args, &store).await;
@@ -298,7 +302,7 @@ mod tests {
         let expiration_time = Instant::now() - Duration::from_millis(100); // Already expired
         store.lock().await.insert(
             key.clone(),
-            crate::store::Entry::new(value.clone(), Some(expiration_time)),
+            crate::store::Entry::new(value.clone()).with_deletion(expiration_time),
         );
 
         let args = vec![resp::RespType::SimpleString(key.clone())];
@@ -318,7 +322,7 @@ mod tests {
         let expiration_time = Instant::now() + Duration::from_millis(300);
         store.lock().await.insert(
             key.clone(),
-            crate::store::Entry::new(value.clone(), Some(expiration_time)),
+            crate::store::Entry::new(value.clone()).with_deletion(expiration_time),
         );
 
         let args = vec![resp::RespType::SimpleString(key)];
