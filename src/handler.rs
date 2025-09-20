@@ -7,6 +7,17 @@ use tokio::{
     net::TcpStream,
 };
 
+/// Handles the ECHO command.
+fn handle_echo(args: Vec<resp::RespType>) -> resp::RespType {
+    if let Some(message_token) = args.first() {
+        let message = resp::extract_string(message_token).ok();
+        resp::RespType::BulkString(message)
+    } else {
+        log::trace!("No message provided.");
+        resp::RespType::BulkString(None)
+    }
+}
+
 /// Parses the SET options and returns the entry if successful.
 fn parse_set_options<I: IntoIterator<Item = resp::RespType>>(iter: I) -> Result<store::Entry> {
     let mut iter = iter.into_iter();
@@ -42,7 +53,7 @@ fn parse_set_options<I: IntoIterator<Item = resp::RespType>>(iter: I) -> Result<
     Ok(entry)
 }
 
-/// Handles the set command.
+/// Handles the SET command.
 async fn handle_set(args: Vec<resp::RespType>, store: &store::Store) -> resp::RespType {
     let failure_result = resp::RespType::Null();
     let mut args = args.into_iter();
@@ -75,7 +86,7 @@ async fn handle_set(args: Vec<resp::RespType>, store: &store::Store) -> resp::Re
     resp::RespType::SimpleString("OK".to_string())
 }
 
-/// Handles the get command.
+/// Handles the GET command.
 async fn handle_get(args: Vec<resp::RespType>, store: &store::Store) -> resp::RespType {
     match args.as_slice() {
         [key] | [key, ..] => {
@@ -108,7 +119,7 @@ async fn get_response(message: resp::RespType, store: &store::Store) -> resp::Re
     let (command, args) = resp::extract_command(message).unwrap();
     match command.to_lowercase().as_str() {
         "ping" => resp::RespType::SimpleString("PONG".to_string()),
-        "echo" => args[0].clone(),
+        "echo" => handle_echo(args),
         "set" => handle_set(args, &store).await,
         "get" => handle_get(args, &store).await,
         _ => panic!("Invalid redis command: {:?}", command),
@@ -295,7 +306,7 @@ mod tests {
             resp::RespType::SimpleString(expected.clone()),
         ]);
         let response = get_response(message, &store).await;
-        assert_eq!(response, resp::RespType::SimpleString(expected));
+        assert_eq!(response, resp::RespType::BulkString(Some(expected)));
     }
 
     #[rstest]
