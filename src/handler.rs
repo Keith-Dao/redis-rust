@@ -1,74 +1,96 @@
 //! This module contains the handler.
 use crate::{resp, store};
-use anyhow::Result;
+use anyhow::{Context, Result};
 use bytes::BytesMut;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
 };
 
-/// Extracts the string from the message.
-fn extract_string(message: &resp::RespType) -> Result<String> {
-    match message {
-        resp::RespType::BulkString(Some(s)) | resp::RespType::SimpleString(s) => Ok(s.clone()),
-        _ => Err(anyhow::anyhow!("Cannot unpack: {:?}", message)),
-    }
-}
-
 /// Extracts the command and its arguments.
 fn extract_command(message: resp::RespType) -> Result<(String, Vec<resp::RespType>)> {
     match message {
         resp::RespType::Array(vec) => Ok((
-            extract_string(&vec[0]).unwrap(),
+            resp::extract_string(&vec[0]).unwrap(),
             vec.into_iter().skip(1).collect(),
         )),
         _ => Err(anyhow::anyhow!("Invalid command: {:?}", message)),
     }
 }
 
+/// Parses the SET options and returns the entry if successful.
+fn parse_set_options<I: IntoIterator<Item = resp::RespType>>(iter: I) -> Result<store::Entry> {
+    let mut iter = iter.into_iter();
+    let value = resp::extract_string(
+        &iter
+            .next()
+            .ok_or(anyhow::anyhow!("Missing value option."))?,
+    )
+    .context("Failed to extract value.")?;
+    let mut entry = store::Entry::new(value);
+
+    while let Some(token) = &iter.next() {
+        let option = resp::extract_string(token).context("Failed to extract option.")?;
+
+        match option.to_lowercase().as_str() {
+            "px" => {
+                let duration = resp::extract_string(
+                    &iter
+                        .next()
+                        .ok_or(anyhow::anyhow!("Missing milliseconds for PX option."))?,
+                )
+                .context("Failed to extract duration string.")?
+                .parse::<u64>()
+                .context("Failed to convert duration string to a number.")?;
+                entry = entry.with_deletion(duration);
+            }
+            _ => {
+                return Err(anyhow::anyhow!("An invalid option was provided: {option}."));
+            }
+        }
+    }
+
+    Ok(entry)
+}
+
 /// Handles the set command.
 async fn handle_set(args: Vec<resp::RespType>, store: &store::Store) -> resp::RespType {
-    match args.as_slice() {
-        [key, value] | [key, value, ..] => {
-            let (key, value) = match (extract_string(key), extract_string(value)) {
-                (Ok(key), Ok(value)) => (key, value),
-                _ => panic!("Invalid SET arguments: {:?}", args),
-            };
+    let failure_result = resp::RespType::Null();
+    let mut args = args.into_iter();
 
-            let deletion_instant = match args.get(2..4) {
-                Some([param, duration]) => {
-                    match (extract_string(param), extract_string(duration)) {
-                        (Ok(param), Ok(duration)) if param.to_lowercase() == "px" => {
-                            match duration.parse::<u64>() {
-                                Ok(milliseconds) => Some(milliseconds),
-                                _ => None,
-                            }
-                        }
-                        _ => None,
-                    }
-                }
-                _ => None,
-            };
-
-            let mut store = store.lock().await;
-            let mut entry = store::Entry::new(value);
-            if let Some(deletion_time) = deletion_instant {
-                entry = entry.with_deletion(deletion_time);
-            }
-            store.insert(key, entry);
-
-            resp::RespType::SimpleString("OK".to_string())
+    let key;
+    if let Some(key_token) = &args.next() {
+        if let Ok(result) = resp::extract_string(key_token) {
+            key = result;
+        } else {
+            log::error!("Failed to extract key string from: {:?}", key_token);
+            return failure_result;
         }
-
-        _ => panic!("Invalid"),
+    } else {
+        log::error!("Key was not provided.");
+        return failure_result;
     }
+
+    let entry;
+    match parse_set_options(args) {
+        Ok(result) => {
+            entry = result;
+        }
+        Err(err) => {
+            log::error!("{err}");
+            return failure_result;
+        }
+    }
+
+    store.lock().await.insert(key, entry);
+    resp::RespType::SimpleString("OK".to_string())
 }
 
 /// Handles the get command.
 async fn handle_get(args: Vec<resp::RespType>, store: &store::Store) -> resp::RespType {
     match args.as_slice() {
         [key] | [key, ..] => {
-            let key = match extract_string(key) {
+            let key = match resp::extract_string(key) {
                 Ok(key) => key,
                 _ => panic!("Invalid GET arguments: {:?}", args),
             };
@@ -163,27 +185,6 @@ mod tests {
     #[fixture]
     fn value() -> String {
         "value".to_string()
-    }
-
-    // --- Extract string ---
-    #[rstest]
-    #[case::bulk_string(resp::RespType::BulkString(Some("Test".to_string())), "Test")]
-    #[case::simple_string(resp::RespType::SimpleString("Test".to_string()), "Test")]
-    fn test_extract_string(#[case] message: resp::RespType, #[case] expected: String) {
-        let result = extract_string(&message);
-        if let Ok(result) = result {
-            assert_eq!(result, expected);
-        } else {
-            panic!("Result should have been successful.");
-        }
-    }
-
-    #[rstest]
-    #[case::array(resp::RespType::Array(vec![]))]
-    #[case::null(resp::RespType::Null())]
-    fn test_extract_string_fail(#[case] message: resp::RespType) {
-        let result = extract_string(&message);
-        assert!(result.is_err());
     }
 
     // --- Extract command ---

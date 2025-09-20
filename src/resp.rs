@@ -4,6 +4,14 @@ use bytes::{Buf, BytesMut};
 use log::trace;
 
 // TODO: Add proper error handling to expects
+///
+/// Extracts the string from the message.
+pub fn extract_string(message: &RespType) -> Result<String> {
+    match message {
+        RespType::BulkString(Some(s)) | RespType::SimpleString(s) => Ok(s.clone()),
+        _ => Err(anyhow::anyhow!("Cannot unpack: {:?}", message)),
+    }
+}
 
 /// Reads bytes from a buffer until a `\r\n` sequence is found.
 /// Returns the slice before `\r\n` and the total bytes consumed including `\r\n`.
@@ -131,6 +139,28 @@ mod tests {
     use rstest::rstest;
 
     // --- Helpers ---
+    // --- Extract string ---
+    #[rstest]
+    #[case::bulk_string(RespType::BulkString(Some("Test".to_string())), "Test")]
+    #[case::simple_string(RespType::SimpleString("Test".to_string()), "Test")]
+    fn test_extract_string(#[case] message: RespType, #[case] expected: String) {
+        let result = extract_string(&message);
+        if let Ok(result) = result {
+            assert_eq!(result, expected);
+        } else {
+            panic!("Result should have been successful.");
+        }
+    }
+
+    #[rstest]
+    #[case::array(RespType::Array(vec![]))]
+    #[case::null(RespType::Null())]
+    fn test_extract_string_fail(#[case] message: RespType) {
+        let result = extract_string(&message);
+        assert!(result.is_err());
+    }
+
+    // --- Read until CRLF ---
     #[rstest]
     #[case::empty_buffer("", &[], "")]
     #[case::no_crlf("No CRLF here", &[], "No CRLF here")]
@@ -160,6 +190,7 @@ mod tests {
         assert_eq!(remaining.as_bytes(), bytes);
     }
 
+    // --- Parse number ---
     #[rstest]
     #[case::zero(b"0", Ok(0))]
     #[case::standard(b"123", Ok(123))]
