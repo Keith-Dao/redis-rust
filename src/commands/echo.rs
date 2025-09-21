@@ -21,9 +21,9 @@ mod test {
     #[rstest]
     fn test_simple_string() {
         let message = "Test";
-        let args = vec![resp::RespType::SimpleString(message.to_string())];
+        let args = vec![resp::RespType::SimpleString(message.into())];
         assert_eq!(
-            resp::RespType::BulkString(Some(message.to_string())),
+            resp::RespType::BulkString(Some(message.into())),
             handle(args)
         );
     }
@@ -31,9 +31,9 @@ mod test {
     #[rstest]
     fn test_bulk_string() {
         let message = "Test";
-        let args = vec![resp::RespType::BulkString(Some(message.to_string()))];
+        let args = vec![resp::RespType::BulkString(Some(message.into()))];
         assert_eq!(
-            resp::RespType::BulkString(Some(message.to_string())),
+            resp::RespType::BulkString(Some(message.into())),
             handle(args)
         );
     }
@@ -47,7 +47,7 @@ mod test {
     #[rstest]
     fn test_invalid() {
         let args = vec![resp::RespType::Array(vec![resp::RespType::BulkString(
-            Some("Test".to_string()),
+            Some("Test".into()),
         )])];
         assert_eq!(resp::RespType::BulkString(None), handle(args));
     }

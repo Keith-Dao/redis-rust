@@ -43,12 +43,12 @@ mod tests {
 
     #[fixture]
     fn key() -> String {
-        "key".to_string()
+        "key".into()
     }
 
     #[fixture]
     fn value() -> String {
-        "value".to_string()
+        "value".into()
     }
 
     // --- Tests ---

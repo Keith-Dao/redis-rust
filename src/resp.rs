@@ -137,8 +137,8 @@ impl RespType {
         match self {
             Self::SimpleString(s) => format!("+{}\r\n", s),
             Self::BulkString(Some(s)) => format!("${}\r\n{}\r\n", s.len(), s),
-            Self::BulkString(None) => "$-1\r\n".to_string(),
-            Self::Null() => "_\r\n".to_string(),
+            Self::BulkString(None) => "$-1\r\n".into(),
+            Self::Null() => "_\r\n".into(),
             _ => panic!("Invalid type to serialise."),
         }
     }
@@ -152,8 +152,8 @@ mod tests {
     // --- Helpers ---
     // --- Extract string ---
     #[rstest]
-    #[case::bulk_string(RespType::BulkString(Some("Test".to_string())), "Test")]
-    #[case::simple_string(RespType::SimpleString("Test".to_string()), "Test")]
+    #[case::bulk_string(RespType::BulkString(Some("Test".into())), "Test")]
+    #[case::simple_string(RespType::SimpleString("Test".into()), "Test")]
     fn test_extract_string(#[case] message: RespType, #[case] expected: String) {
         let result = extract_string(&message);
         if let Ok(result) = result {
@@ -175,26 +175,26 @@ mod tests {
     #[rstest]
     #[case::set_command(
         RespType::Array(vec![
-            RespType::BulkString(Some("SET".to_string())),
-            RespType::BulkString(Some("key".to_string())),
-            RespType::BulkString(Some("value".to_string())),
+            RespType::BulkString(Some("SET".into())),
+            RespType::BulkString(Some("key".into())),
+            RespType::BulkString(Some("value".into())),
         ]),
         "SET",
         vec![
-            RespType::BulkString(Some("key".to_string())),
-            RespType::BulkString(Some("value".to_string())),
+            RespType::BulkString(Some("key".into())),
+            RespType::BulkString(Some("value".into())),
         ]
     )]
     #[case::get_command(
         RespType::Array(vec![
-            RespType::BulkString(Some("GET".to_string())),
-            RespType::BulkString(Some("key".to_string())),
+            RespType::BulkString(Some("GET".into())),
+            RespType::BulkString(Some("key".into())),
         ]),
         "GET",
-        vec![RespType::BulkString(Some("key".to_string()))]
+        vec![RespType::BulkString(Some("key".into()))]
     )]
     #[case::no_args(
-        RespType::Array(vec![RespType::SimpleString("Test".to_string())]),
+        RespType::Array(vec![RespType::SimpleString("Test".into())]),
         "Test",
         vec![],
     )]
@@ -209,8 +209,8 @@ mod tests {
     }
 
     #[rstest]
-    #[case::simple_string(RespType::SimpleString("SET".to_string()))]
-    #[case::bulk_string(RespType::BulkString(Some("SET".to_string())))]
+    #[case::simple_string(RespType::SimpleString("SET".into()))]
+    #[case::bulk_string(RespType::BulkString(Some("SET".into())))]
     fn test_extract_command_fail(#[case] message: RespType) {
         let result = extract_command(message);
         assert!(result.is_err());
@@ -279,30 +279,30 @@ mod tests {
     // --- Parsers ---
     #[rstest]
     // Simple strings
-    #[case::simple_string(b"+Test\r\n", Ok(RespType::SimpleString("Test".to_string())))]
-    #[case::simple_string_empty(b"+\r\n", Ok(RespType::SimpleString("".to_string())))]
+    #[case::simple_string(b"+Test\r\n", Ok(RespType::SimpleString("Test".into())))]
+    #[case::simple_string_empty(b"+\r\n", Ok(RespType::SimpleString("".into())))]
     #[case::simple_string_multiple_elements(
         b"+Test\r\n+Another\r\n",
-        Ok(RespType::SimpleString("Test".to_string()))
+        Ok(RespType::SimpleString("Test".into()))
     )]
     #[case::simple_string_multiple_words(
         b"+Test with more than one word\r\n+Another\r\n",
-        Ok(RespType::SimpleString("Test with more than one word".to_string()))
+        Ok(RespType::SimpleString("Test with more than one word".into()))
     )]
     #[case::simple_string_missing_clrf(
         b"+Test",
         Err(anyhow::anyhow!("Invalid simple string: b\"Test\"."))
     )]
     // Bulk strings
-    #[case::bulk_string(b"$4\r\nTest\r\n", Ok(RespType::BulkString(Some("Test".to_string()))))]
-    #[case::bulk_string_empty(b"$0\r\n\r\n", Ok(RespType::BulkString(Some("".to_string()))))]
+    #[case::bulk_string(b"$4\r\nTest\r\n", Ok(RespType::BulkString(Some("Test".into()))))]
+    #[case::bulk_string_empty(b"$0\r\n\r\n", Ok(RespType::BulkString(Some("".into()))))]
     #[case::bulk_string_long(
         b"$21\r\nReally long text here\r\n",
-        Ok(RespType::BulkString(Some("Really long text here".to_string())))
+        Ok(RespType::BulkString(Some("Really long text here".into())))
     )]
     #[case::bulk_string_with_crlf(
         b"$13\r\nTest\r\nAnother\r\n",
-        Ok(RespType::BulkString(Some("Test\r\nAnother".to_string())))
+        Ok(RespType::BulkString(Some("Test\r\nAnother".into())))
     )]
     #[case::bulk_string_mismatch_length(
         b"$7\r\nTest\r\n",
@@ -328,9 +328,9 @@ mod tests {
     #[case::array(
         b"*3\r\n+Test\r\n$4\r\nTest\r\n$7\r\nAnother\r\n",
         Ok(RespType::Array(vec![
-            RespType::SimpleString("Test".to_string()),
-            RespType::BulkString(Some("Test".to_string())),
-            RespType::BulkString(Some("Another".to_string()))
+            RespType::SimpleString("Test".into()),
+            RespType::BulkString(Some("Test".into())),
+            RespType::BulkString(Some("Another".into()))
         ]))
     )]
     #[case::array_empty(b"*0\r\n", Ok(RespType::Array(vec![])))]
@@ -360,12 +360,12 @@ mod tests {
     // --- Serialization ---
     #[rstest]
     // Simple strings
-    #[case::simple_string(RespType::SimpleString("Test".to_string()), "+Test\r\n")]
-    #[case::simple_string_empty(RespType::SimpleString("".to_string()), "+\r\n")]
+    #[case::simple_string(RespType::SimpleString("Test".into()), "+Test\r\n")]
+    #[case::simple_string_empty(RespType::SimpleString("".into()), "+\r\n")]
     // Bulk strings
-    #[case::bulk_string(RespType::BulkString(Some("Test".to_string())), "$4\r\nTest\r\n")]
-    #[case::bulk_string_empty(RespType::BulkString(Some("".to_string())), "$0\r\n\r\n")]
-    #[case::bulk_string_with_clrf(RespType::BulkString(Some("Test\r\nAnother".to_string())), "$13\r\nTest\r\nAnother\r\n")]
+    #[case::bulk_string(RespType::BulkString(Some("Test".into())), "$4\r\nTest\r\n")]
+    #[case::bulk_string_empty(RespType::BulkString(Some("".into())), "$0\r\n\r\n")]
+    #[case::bulk_string_with_clrf(RespType::BulkString(Some("Test\r\nAnother".into())), "$13\r\nTest\r\nAnother\r\n")]
     #[case::bulk_string_null(RespType::BulkString(None), "$-1\r\n")]
     // Arrays
     // Null

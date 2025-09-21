@@ -66,7 +66,7 @@ pub async fn handle(args: Vec<resp::RespType>, store: &store::Store) -> resp::Re
     }
 
     store.lock().await.insert(key, entry);
-    resp::RespType::SimpleString("OK".to_string())
+    resp::RespType::SimpleString("OK".into())
 }
 
 #[cfg(test)]
@@ -82,12 +82,12 @@ mod tests {
 
     #[fixture]
     fn key() -> String {
-        "key".to_string()
+        "key".into()
     }
 
     #[fixture]
     fn value() -> String {
-        "value".to_string()
+        "value".into()
     }
 
     // --- Tests ---
@@ -99,7 +99,7 @@ mod tests {
             resp::RespType::SimpleString(value.clone()),
         ];
         let response = handle(args, &store).await;
-        assert_eq!(response, resp::RespType::SimpleString("OK".to_string()));
+        assert_eq!(response, resp::RespType::SimpleString("OK".into()));
 
         let stored_value = store.lock().await.get(&key).unwrap().value.clone();
         assert_eq!(stored_value, value);
@@ -112,11 +112,11 @@ mod tests {
         let args = vec![
             resp::RespType::SimpleString(key.clone()),
             resp::RespType::SimpleString(value.clone()),
-            resp::RespType::SimpleString("PX".to_string()),
+            resp::RespType::SimpleString("PX".into()),
             resp::RespType::SimpleString(duration.to_string()), // 100 milliseconds
         ];
         let response = handle(args, &store).await;
-        assert_eq!(response, resp::RespType::SimpleString("OK".to_string()));
+        assert_eq!(response, resp::RespType::SimpleString("OK".into()));
 
         let store = store.lock().await;
         let entry = store.get(&key).unwrap();

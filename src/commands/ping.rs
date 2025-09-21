@@ -3,7 +3,7 @@ use crate::resp;
 
 /// Handles the PING command.
 pub fn handle() -> resp::RespType {
-    resp::RespType::SimpleString("PONG".to_string())
+    resp::RespType::SimpleString("PONG".into())
 }
 
 #[cfg(test)]
@@ -13,6 +13,6 @@ mod test {
 
     #[rstest]
     fn test_handle() {
-        assert_eq!(handle(), resp::RespType::SimpleString("PONG".to_string()));
+        assert_eq!(handle(), resp::RespType::SimpleString("PONG".into()));
     }
 }

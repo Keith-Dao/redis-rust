@@ -71,33 +71,33 @@ mod tests {
 
     #[fixture]
     fn key() -> String {
-        "key".to_string()
+        "key".into()
     }
 
     #[fixture]
     fn value() -> String {
-        "value".to_string()
+        "value".into()
     }
 
     // --- Tests ---
     #[rstest]
     #[tokio::test]
     async fn test_get_response_ping(store: crate::store::Store) {
-        let message = resp::RespType::Array(vec![resp::RespType::SimpleString("PING".to_string())]);
+        let message = resp::RespType::Array(vec![resp::RespType::SimpleString("PING".into())]);
         let response = get_response(message, &store).await;
-        assert_eq!(response, resp::RespType::SimpleString("PONG".to_string()));
+        assert_eq!(response, resp::RespType::SimpleString("PONG".into()));
     }
 
     #[rstest]
     #[tokio::test]
     async fn test_get_response_echo(store: crate::store::Store) {
-        let expected = "Hello".to_string();
+        let expected = "Hello";
         let message = resp::RespType::Array(vec![
-            resp::RespType::SimpleString("ECHO".to_string()),
-            resp::RespType::SimpleString(expected.clone()),
+            resp::RespType::SimpleString("ECHO".into()),
+            resp::RespType::SimpleString(expected.into()),
         ]);
         let response = get_response(message, &store).await;
-        assert_eq!(response, resp::RespType::BulkString(Some(expected)));
+        assert_eq!(response, resp::RespType::BulkString(Some(expected.into())));
     }
 
     #[rstest]
@@ -109,42 +109,39 @@ mod tests {
     ) {
         // SET
         let set_message = resp::RespType::Array(vec![
-            resp::RespType::SimpleString("SET".to_string()),
+            resp::RespType::SimpleString("SET".into()),
             resp::RespType::SimpleString(key.clone()),
             resp::RespType::SimpleString(value.clone()),
         ]);
         let set_response = get_response(set_message, &store).await;
-        assert_eq!(set_response, resp::RespType::SimpleString("OK".to_string()));
+        assert_eq!(set_response, resp::RespType::SimpleString("OK".into()));
 
         // GET
         let get_message = resp::RespType::Array(vec![
-            resp::RespType::SimpleString("GET".to_string()),
+            resp::RespType::SimpleString("GET".into()),
             resp::RespType::SimpleString(key.clone()),
         ]);
         let response = get_response(get_message.clone(), &store).await;
         assert_eq!(response, resp::RespType::BulkString(Some(value.clone())));
 
         // SET with PX and GET after expiration
-        let expired_key = "expired_key".to_string();
-        let expired_value = "expired_value".to_string();
+        let expired_key = "expired_key";
+        let expired_value = "expired_value";
         let set_px_message = resp::RespType::Array(vec![
-            resp::RespType::SimpleString("SET".to_string()),
-            resp::RespType::SimpleString(expired_key.clone()),
-            resp::RespType::SimpleString(expired_value.clone()),
-            resp::RespType::SimpleString("PX".to_string()),
-            resp::RespType::SimpleString("10".to_string()), // 10 milliseconds
+            resp::RespType::SimpleString("SET".into()),
+            resp::RespType::SimpleString(expired_key.into()),
+            resp::RespType::SimpleString(expired_value.into()),
+            resp::RespType::SimpleString("PX".into()),
+            resp::RespType::SimpleString("10".into()), // 10 milliseconds
         ]);
         let set_px_response = get_response(set_px_message, &store).await;
-        assert_eq!(
-            set_px_response,
-            resp::RespType::SimpleString("OK".to_string())
-        );
+        assert_eq!(set_px_response, resp::RespType::SimpleString("OK".into()));
 
         tokio::time::sleep(tokio::time::Duration::from_millis(20)).await;
 
         let get_exp_message = resp::RespType::Array(vec![
-            resp::RespType::SimpleString("GET".to_string()),
-            resp::RespType::SimpleString(expired_key.clone()),
+            resp::RespType::SimpleString("GET".into()),
+            resp::RespType::SimpleString(expired_key.into()),
         ]);
         let get_exp_response = get_response(get_exp_message, &store).await;
         assert_eq!(get_exp_response, resp::RespType::BulkString(None));
