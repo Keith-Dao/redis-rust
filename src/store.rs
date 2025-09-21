@@ -4,6 +4,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 // --- Store entry ---
+#[derive(PartialEq, Debug)]
 /// An entry in the Redis store.
 pub struct Entry {
     pub value: String,
@@ -36,4 +37,36 @@ pub type Store = Arc<Mutex<Box<HashMap<String, Entry>>>>;
 /// Creates a new Redis store.
 pub fn new() -> Store {
     Arc::new(Mutex::new(Box::new(HashMap::new())))
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use rstest::rstest;
+
+    // --- Tests ---
+    #[rstest]
+    fn test_new() {
+        let value = "value";
+        let expected = Entry {
+            value: value.into(),
+            deletion_time: None,
+        };
+        assert_eq!(expected, Entry::new(value));
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_with_deletion() {
+        tokio::time::pause();
+        let value = "value";
+        let duration = 100;
+        let expected = Entry {
+            value: value.into(),
+            deletion_time: Some(
+                tokio::time::Instant::now() + tokio::time::Duration::from_millis(duration),
+            ),
+        };
+        assert_eq!(expected, Entry::new(value).with_deletion(duration));
+    }
 }
