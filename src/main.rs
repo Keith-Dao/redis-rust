@@ -1,3 +1,4 @@
+mod commands;
 mod handler;
 mod resp;
 mod store;
