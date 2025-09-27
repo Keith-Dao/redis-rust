@@ -2,12 +2,17 @@
 use crate::{resp, store};
 use anyhow::{Context, Result};
 
-/// Parses the SET options and returns the entry if successful.
-fn parse_set_options<I: IntoIterator<Item = resp::RespType>>(iter: I) -> Result<store::Entry> {
+/// Parses the SET options.
+fn parse_set_options<I: IntoIterator<Item = resp::RespType>>(
+    iter: I,
+) -> Result<(String, store::Entry)> {
     let mut iter = iter.into_iter();
+
+    let key = resp::extract_string(&iter.next().context("Missing key")?)
+        .context("Failed to extract key")?;
+
     let value = resp::extract_string(&iter.next().ok_or(anyhow::anyhow!("Missing value"))?)
         .context("Failed to extract value")?;
-
     let mut entry = store::Entry::new(value);
     while let Some(token) = &iter.next() {
         let option = resp::extract_string(token).context("Failed to extract option")?;
@@ -30,25 +35,11 @@ fn parse_set_options<I: IntoIterator<Item = resp::RespType>>(iter: I) -> Result<
         }
     }
 
-    Ok(entry)
+    Ok((key, entry))
 }
 /// Handles the SET command.
 pub async fn handle(args: Vec<resp::RespType>, store: &store::Store) -> resp::RespType {
-    let mut args = args.into_iter();
-
-    let key = match args
-        .next()
-        .context("Missing key")
-        .and_then(|key_token| resp::extract_string(&key_token).context("Failed to extract key"))
-    {
-        Ok(result) => result,
-        Err(err) => {
-            log::error!("Failed to extract the key. Err: {err}");
-            return resp::RespType::BulkError(format!("ERR {err} for 'SET' command"));
-        }
-    };
-
-    let entry = match parse_set_options(args) {
+    let (key, entry) = match parse_set_options(args) {
         Ok(result) => result,
         Err(err) => {
             log::error!("{err}");
