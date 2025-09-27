@@ -1,34 +1,84 @@
-[![progress-banner](https://backend.codecrafters.io/progress/redis/5994e144-d638-4c77-803a-40d27ad44d9c)](https://app.codecrafters.io/users/codecrafters-bot?r=2qF)
+# Redis server - Rust
 
-This is a starting point for Rust solutions to the
-["Build Your Own Redis" Challenge](https://codecrafters.io/challenges/redis).
+A Rust implementation of a Redis server.
 
-In this challenge, you'll build a toy Redis clone that's capable of handling
-basic commands like `PING`, `SET` and `GET`. Along the way we'll learn about
-event loops, the Redis protocol and more.
+## Features
 
-**Note**: If you're viewing this repo on GitHub, head over to
-[codecrafters.io](https://codecrafters.io) to try the challenge.
+This Redis server implementation in Rust supports the following commands:
 
-# Passing the first stage
+- `PING`: Responds with "PONG".
+- `ECHO <message>`: Returns the provided message.
+- `SET <key> <value> [PX <milliseconds>]`: Sets the string value of a key.
+  - `PX`: Set the specified expire time, in milliseconds.
+- `GET <key>`: Get the string value of a key.
 
-The entry point for your Redis implementation is in `src/main.rs`. Study and
-uncomment the relevant code, and push your changes to pass the first stage:
+## Getting Started
 
-```sh
-git commit -am "pass 1st stage" # any msg
-git push origin master
+### Prerequisites
+
+Ensure you have Rust and Cargo installed.
+
+### Building the project
+
+Navigate to the root directory of the project and build it using Cargo:
+
+```bash
+cargo build
 ```
 
-That's all!
+### Running the server
 
-# Stage 2 & beyond
+You can run the server directly from the target directory or using `cargo run`:
 
-Note: This section is for stages 2 and beyond.
+```bash
+cargo run
+```
 
-1. Ensure you have `cargo (1.88)` installed locally
-1. Run `./your_program.sh` to run your Redis server, which is implemented in
-   `src/main.rs`. This command compiles your Rust project, so it might be slow
-   the first time you run it. Subsequent runs will be fast.
-1. Commit your changes and run `git push origin master` to submit your solution
-   to CodeCrafters. Test output will be streamed to your terminal.
+The server will start on port `6379` by default.
+
+### Connecting to the server
+
+You can connect to the server using `redis-cli` or any other Redis client:
+
+```bash
+redis-cli
+```
+
+Once connected, you can try out the supported commands:
+
+```
+127.0.0.1:6379> PING
+PONG
+127.0.0.1:6379> ECHO "Hello, Rust Redis!"
+"Hello, Rust Redis!"
+127.0.0.1:6379> SET mykey "myvalue"
+OK
+127.0.0.1:6379> GET mykey
+"myvalue"
+127.0.0.1:6379> SET expirekey "temp" EX 10
+OK
+127.0.0.1:6379> GET expirekey
+"temp"
+```
+
+## Project Structure
+
+The project is organized as follows:
+
+```
+codecrafters-redis-rust/
+├── src/
+│   ├── commands/             # Individual command implementations (e.g., PING, ECHO, GET, SET)
+│   │   ├── echo.rs
+│   │   ├── get.rs
+│   │   ├── ping.rs
+│   │   └── set.rs
+│   ├── commands.rs           # Aggregates and dispatches different commands
+│   ├── handler.rs            # Handles incoming client connections and command parsing
+│   ├── main.rs               # Main entry point of the server
+│   ├── resp.rs               # Handles Redis Serialization Protocol (RESP) encoding and decoding
+│   └── store.rs              # Manages the key-value store and expiration logic
+├── Cargo.toml                # Rust project manifest
+├── Cargo.lock                # Dependency lock file
+└── README.md                 # This file
+```
