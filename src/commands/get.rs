@@ -1,32 +1,39 @@
 //! This module contains the GET command.
 use crate::{resp, store};
+use anyhow::{Context, Result};
+
+/// Parses the GET options.
+fn parse_get_options<I: IntoIterator<Item = resp::RespType>>(iter: I) -> Result<String> {
+    let mut iter = iter.into_iter();
+    let key = resp::extract_string(&iter.next().ok_or(anyhow::anyhow!("Missing key option."))?)
+        .context("Failed to extract key.")?;
+    Ok(key)
+}
 
 /// Handles the GET command.
 pub async fn handle(args: Vec<resp::RespType>, store: &store::Store) -> resp::RespType {
-    match args.as_slice() {
-        [key] | [key, ..] => {
-            let key = match resp::extract_string(key) {
-                Ok(key) => key,
-                _ => panic!("Invalid GET arguments: {:?}", args),
-            };
-
-            let mut store = store.lock().await;
-            match store.get(&key) {
-                Some(store::Entry {
-                    value,
-                    deletion_time,
-                }) => match deletion_time {
-                    Some(deletion_time) if deletion_time <= &tokio::time::Instant::now() => {
-                        store.remove(&key);
-                        resp::RespType::BulkString(None)
-                    }
-                    _ => resp::RespType::BulkString(Some(value.clone())),
-                },
-                None => resp::RespType::BulkString(None),
-            }
+    let key = match parse_get_options(args.into_iter()) {
+        Ok(result) => result,
+        Err(err) => {
+            log::error!("{err}");
+            return resp::RespType::BulkError(format!("ERR {err} for 'GET' command"));
         }
+    };
 
-        _ => panic!("Invalid"),
+    let mut store = store.lock().await;
+    let missing_value = resp::RespType::Null();
+    match store.entry(key) {
+        std::collections::hash_map::Entry::Occupied(entry) => {
+            if let Some(deletion_time) = entry.get().deletion_time {
+                if deletion_time <= tokio::time::Instant::now() {
+                    entry.remove_entry();
+                    return missing_value;
+                }
+            }
+
+            resp::RespType::BulkString(Some(entry.get().value.clone()))
+        }
+        _ => missing_value,
     }
 }
 
@@ -70,7 +77,7 @@ mod tests {
     async fn test_handle_non_existing(store: crate::store::Store, key: String) {
         let args = vec![resp::RespType::SimpleString(key)];
         let response = handle(args, &store).await;
-        assert_eq!(response, resp::RespType::BulkString(None));
+        assert_eq!(response, resp::RespType::Null());
     }
 
     #[rstest]
@@ -84,7 +91,7 @@ mod tests {
 
         let args = vec![resp::RespType::SimpleString(key.clone())];
         let response = handle(args, &store).await;
-        assert_eq!(response, resp::RespType::BulkString(None));
+        assert_eq!(response, resp::RespType::Null());
 
         assert!(store.lock().await.get(&key).is_none());
     }
@@ -105,7 +112,7 @@ mod tests {
 
         tokio::time::advance(tokio::time::Duration::from_millis(deletion_time)).await;
         let response = handle(args, &store).await;
-        assert_eq!(response, resp::RespType::BulkString(None));
+        assert_eq!(response, resp::RespType::Null());
         assert!(store.lock().await.get("expiredkey").is_none());
     }
 }

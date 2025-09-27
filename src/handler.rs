@@ -158,7 +158,7 @@ mod tests {
             resp::RespType::SimpleString(expired_key.into()),
         ]);
         let get_exp_response = get_response(get_exp_message, &store).await;
-        assert_eq!(get_exp_response, resp::RespType::BulkString(None));
+        assert_eq!(get_exp_response, resp::RespType::Null());
         let response = get_response(get_message, &store).await;
         assert_eq!(response, resp::RespType::BulkString(Some(value.clone())));
     }
