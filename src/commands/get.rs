@@ -69,7 +69,7 @@ mod tests {
 
         let args = vec![resp::RespType::SimpleString(key)];
         let response = handle(args, &store).await;
-        assert_eq!(response, resp::RespType::BulkString(Some(value)));
+        assert_eq!(resp::RespType::BulkString(Some(value)), response);
     }
 
     #[rstest]
@@ -77,7 +77,7 @@ mod tests {
     async fn test_handle_non_existing(store: crate::store::Store, key: String) {
         let args = vec![resp::RespType::SimpleString(key)];
         let response = handle(args, &store).await;
-        assert_eq!(response, resp::RespType::Null());
+        assert_eq!(resp::RespType::Null(), response);
     }
 
     #[rstest]
@@ -91,7 +91,7 @@ mod tests {
 
         let args = vec![resp::RespType::SimpleString(key.clone())];
         let response = handle(args, &store).await;
-        assert_eq!(response, resp::RespType::Null());
+        assert_eq!(resp::RespType::Null(), response);
 
         assert!(store.lock().await.get(&key).is_none());
     }
@@ -108,11 +108,11 @@ mod tests {
 
         let args = vec![resp::RespType::SimpleString(key)];
         let response = handle(args.clone(), &store).await;
-        assert_eq!(response, resp::RespType::BulkString(Some(value)));
+        assert_eq!(resp::RespType::BulkString(Some(value)), response);
 
         tokio::time::advance(tokio::time::Duration::from_millis(deletion_time)).await;
         let response = handle(args, &store).await;
-        assert_eq!(response, resp::RespType::Null());
+        assert_eq!(resp::RespType::Null(), response);
         assert!(store.lock().await.get("expiredkey").is_none());
     }
 }

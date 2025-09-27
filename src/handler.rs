@@ -85,7 +85,7 @@ mod tests {
     async fn test_get_response_ping(store: crate::store::Store) {
         let message = resp::RespType::Array(vec![resp::RespType::SimpleString("PING".into())]);
         let response = get_response(message, &store).await;
-        assert_eq!(response, resp::RespType::SimpleString("PONG".into()));
+        assert_eq!(resp::RespType::SimpleString("PONG".into()), response);
     }
 
     #[rstest]
@@ -97,7 +97,7 @@ mod tests {
             resp::RespType::SimpleString(expected.into()),
         ]);
         let response = get_response(message, &store).await;
-        assert_eq!(response, resp::RespType::BulkString(Some(expected.into())));
+        assert_eq!(resp::RespType::BulkString(Some(expected.into())), response);
     }
 
     #[rstest]
@@ -115,7 +115,7 @@ mod tests {
             resp::RespType::SimpleString(value.clone()),
         ]);
         let set_response = get_response(set_message, &store).await;
-        assert_eq!(set_response, resp::RespType::SimpleString("OK".into()));
+        assert_eq!(resp::RespType::SimpleString("OK".into()), set_response);
 
         // GET
         let get_message = resp::RespType::Array(vec![
@@ -123,7 +123,7 @@ mod tests {
             resp::RespType::SimpleString(key.clone()),
         ]);
         let response = get_response(get_message.clone(), &store).await;
-        assert_eq!(response, resp::RespType::BulkString(Some(value.clone())));
+        assert_eq!(resp::RespType::BulkString(Some(value.clone())), response);
 
         // SET with PX and GET after expiration
         let expired_key = "expired_key";
@@ -137,7 +137,7 @@ mod tests {
         ]);
 
         let set_px_response = get_response(set_px_message, &store).await;
-        assert_eq!(set_px_response, resp::RespType::SimpleString("OK".into()));
+        assert_eq!(resp::RespType::SimpleString("OK".into()), set_px_response);
 
         // Key still valid
         tokio::time::advance(tokio::time::Duration::from_millis(9)).await;
@@ -158,9 +158,9 @@ mod tests {
             resp::RespType::SimpleString(expired_key.into()),
         ]);
         let get_exp_response = get_response(get_exp_message, &store).await;
-        assert_eq!(get_exp_response, resp::RespType::Null());
+        assert_eq!(resp::RespType::Null(), get_exp_response);
         let response = get_response(get_message, &store).await;
-        assert_eq!(response, resp::RespType::BulkString(Some(value.clone())));
+        assert_eq!(resp::RespType::BulkString(Some(value.clone())), response);
     }
 
     #[rstest]

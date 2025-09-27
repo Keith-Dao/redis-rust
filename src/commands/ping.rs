@@ -13,6 +13,6 @@ mod test {
 
     #[rstest]
     fn test_handle() {
-        assert_eq!(handle(), resp::RespType::SimpleString("PONG".into()));
+        assert_eq!(resp::RespType::SimpleString("PONG".into()), handle());
     }
 }
