@@ -92,6 +92,7 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn test_handle_expiry(store: crate::store::Store, key: String, value: String) {
+        tokio::time::pause();
         let deletion_time = 300;
         store.lock().await.insert(
             key.clone(),
@@ -102,7 +103,7 @@ mod tests {
         let response = handle(args.clone(), &store).await;
         assert_eq!(response, resp::RespType::BulkString(Some(value)));
 
-        tokio::time::sleep(tokio::time::Duration::from_millis(deletion_time)).await;
+        tokio::time::advance(tokio::time::Duration::from_millis(deletion_time)).await;
         let response = handle(args, &store).await;
         assert_eq!(response, resp::RespType::BulkString(None));
         assert!(store.lock().await.get("expiredkey").is_none());

@@ -108,6 +108,7 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn test_handle_with_px(store: crate::store::Store, key: String, value: String) {
+        tokio::time::pause();
         let duration = 100;
         let args = vec![
             resp::RespType::SimpleString(key.clone()),
@@ -123,10 +124,10 @@ mod tests {
         assert_eq!(value, value);
         assert!(entry.deletion_time.is_some());
 
-        tokio::time::sleep(tokio::time::Duration::from_millis(duration)).await;
-        assert!(
-            entry.deletion_time.expect("Checked it is some.") <= tokio::time::Instant::now(),
-            "Deletion timestamp should be before now."
+        tokio::time::advance(tokio::time::Duration::from_millis(duration)).await;
+        assert_eq!(
+            entry.deletion_time.expect("Checked it is some."),
+            tokio::time::Instant::now()
         );
     }
 }

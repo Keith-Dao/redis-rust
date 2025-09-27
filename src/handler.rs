@@ -107,6 +107,7 @@ mod tests {
         key: String,
         value: String,
     ) {
+        tokio::time::pause();
         // SET
         let set_message = resp::RespType::Array(vec![
             resp::RespType::SimpleString("SET".into()),
@@ -134,11 +135,24 @@ mod tests {
             resp::RespType::SimpleString("PX".into()),
             resp::RespType::SimpleString("10".into()), // 10 milliseconds
         ]);
+
         let set_px_response = get_response(set_px_message, &store).await;
         assert_eq!(set_px_response, resp::RespType::SimpleString("OK".into()));
 
-        tokio::time::sleep(tokio::time::Duration::from_millis(20)).await;
+        // Key still valid
+        tokio::time::advance(tokio::time::Duration::from_millis(9)).await;
+        let get_exp_message = resp::RespType::Array(vec![
+            resp::RespType::SimpleString("GET".into()),
+            resp::RespType::SimpleString(expired_key.into()),
+        ]);
+        let get_exp_response = get_response(get_exp_message, &store).await;
+        assert_eq!(
+            get_exp_response,
+            resp::RespType::BulkString(Some(expired_value.into()))
+        );
 
+        // Key expired now
+        tokio::time::advance(tokio::time::Duration::from_millis(1)).await;
         let get_exp_message = resp::RespType::Array(vec![
             resp::RespType::SimpleString("GET".into()),
             resp::RespType::SimpleString(expired_key.into()),
