@@ -14,7 +14,7 @@ async fn get_response(message: resp::RespType, store: &store::Store) -> resp::Re
         "echo" => commands::echo::handle(args),
         "set" => commands::set::handle(args, &store).await,
         "get" => commands::get::handle(args, &store).await,
-        _ => panic!("Invalid redis command: {:?}", command),
+        _ => resp::RespType::BulkError(format!("ERR Command ({command}) is not valid")),
     }
 }
 
@@ -161,5 +161,14 @@ mod tests {
         assert_eq!(get_exp_response, resp::RespType::BulkString(None));
         let response = get_response(get_message, &store).await;
         assert_eq!(response, resp::RespType::BulkString(Some(value.clone())));
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_invalid_command(store: crate::store::Store) {
+        let message = resp::RespType::Array(vec![resp::RespType::SimpleString("Invalid".into())]);
+        let response = get_response(message, &store).await;
+        let expected = resp::RespType::BulkError("ERR Command (Invalid) is not valid".into());
+        assert_eq!(expected, response);
     }
 }
