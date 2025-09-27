@@ -50,8 +50,10 @@ fn parse_num(buffer: BytesMut) -> Result<i64> {
 /// Represents a RESP (Redis Serialization Protocol) data type.
 pub enum RespType {
     SimpleString(String),
+    SimpleError(String),
     BulkString(Option<String>),
     Array(Vec<RespType>),
+    BulkError(String),
     Null(),
 }
 
@@ -64,6 +66,16 @@ impl RespType {
         }
 
         Err(anyhow::anyhow!("Invalid simple string: {:?}.", buffer))
+    }
+
+    /// Parses the buffer for a simple error.
+    fn parse_simple_error(buffer: &mut BytesMut) -> Result<RespType> {
+        trace!("Parsing simple error: {:?}.", buffer);
+        if let Some(message) = read_until_crlf(buffer) {
+            return Ok(RespType::SimpleError(String::from_utf8(message.to_vec())?));
+        }
+
+        Err(anyhow::anyhow!("Invalid simple error: {:?}.", buffer))
     }
 
     /// Parses a buffer for a bulk string.
@@ -87,6 +99,29 @@ impl RespType {
             return Err(anyhow::anyhow!("Expected CRLF."));
         }
         Ok(RespType::BulkString(Some(message)))
+    }
+
+    /// Parses a buffer for a bulk error.
+    fn parse_bulk_error(buffer: &mut BytesMut) -> Result<RespType> {
+        trace!("Parsing bulk error: {:?}", buffer);
+        let expected_message_length = parse_num(
+            read_until_crlf(buffer)
+                .expect(&format!("Bulk error missing length segment: {:?}.", buffer)),
+        )? as usize;
+
+        if buffer.len() < expected_message_length {
+            return Err(anyhow::anyhow!(
+                "Message did not match the expected length. Expected: {}, got: {}.",
+                expected_message_length,
+                buffer.len()
+            ));
+        }
+
+        let message = String::from_utf8(buffer.split_to(expected_message_length).to_vec())?;
+        if buffer.len() < 2 || buffer.split_to(2).as_ref() != b"\r\n" {
+            return Err(anyhow::anyhow!("Expected CRLF."));
+        }
+        Ok(RespType::BulkError(message))
     }
 
     /// Parses a buffer for an array.
@@ -117,14 +152,16 @@ impl RespType {
     }
 
     /// Parses a buffer for the message.
-    pub fn from_bytes(buffer: &mut BytesMut) -> Result<RespType> {
+    pub fn from_bytes(buffer: &mut BytesMut) -> Result<Self> {
         trace!("Parsing message: {:?}.", buffer);
         if let Some((&first_byte, _)) = buffer.split_first() {
             _ = buffer.split_to(1);
             match first_byte as char {
-                '+' => RespType::parse_simple_string(buffer),
-                '$' => RespType::parse_bulk_string(buffer),
-                '*' => RespType::parse_array(buffer),
+                '+' => Self::parse_simple_string(buffer),
+                '-' => Self::parse_simple_error(buffer),
+                '$' => Self::parse_bulk_string(buffer),
+                '!' => Self::parse_bulk_error(buffer),
+                '*' => Self::parse_array(buffer),
                 _ => Err(anyhow::anyhow!("Invalid message type.")),
             }
         } else {
@@ -135,9 +172,11 @@ impl RespType {
     /// Serializes the RESP into a RESP-compliant string.
     pub fn serialize(&self) -> String {
         match self {
-            Self::SimpleString(s) => format!("+{}\r\n", s),
-            Self::BulkString(Some(s)) => format!("${}\r\n{}\r\n", s.len(), s),
+            Self::SimpleString(s) => format!("+{s}\r\n"),
+            Self::SimpleError(s) => format!("-{s}\r\n"),
+            Self::BulkString(Some(s)) => format!("${}\r\n{s}\r\n", s.len()),
             Self::BulkString(None) => "$-1\r\n".into(),
+            Self::BulkError(s) => format!("!{}\r\n{s}\r\n", s.len()),
             Self::Null() => "_\r\n".into(),
             _ => panic!("Invalid type to serialise."),
         }
@@ -293,6 +332,21 @@ mod tests {
         b"+Test",
         Err(anyhow::anyhow!("Invalid simple string: b\"Test\"."))
     )]
+    // Simple error
+    #[case::simple_error(b"-Test\r\n", Ok(RespType::SimpleError("Test".into())))]
+    #[case::simple_error_empty(b"-\r\n", Ok(RespType::SimpleError("".into())))]
+    #[case::simple_error_multiple_elements(
+        b"-Test\r\n+Another\r\n",
+        Ok(RespType::SimpleError("Test".into()))
+    )]
+    #[case::simple_error_multiple_words(
+        b"-Test with more than one word\r\n+Another\r\n",
+        Ok(RespType::SimpleError("Test with more than one word".into()))
+    )]
+    #[case::simple_error_missing_clrf(
+        b"-Test",
+        Err(anyhow::anyhow!("Invalid simple error: b\"Test\"."))
+    )]
     // Bulk strings
     #[case::bulk_string(b"$4\r\nTest\r\n", Ok(RespType::BulkString(Some("Test".into()))))]
     #[case::bulk_string_empty(b"$0\r\n\r\n", Ok(RespType::BulkString(Some("".into()))))]
@@ -322,6 +376,37 @@ mod tests {
     )]
     #[case::bulk_string_expected_crlf(
         b"$4\r\nTestab",
+        Err(anyhow::anyhow!("Expected CRLF."))
+    )]
+    // Bulk errors
+    #[case::bulk_error(b"!4\r\nTest\r\n", Ok(RespType::BulkError("Test".into())))]
+    #[case::bulk_error_empty(b"!0\r\n\r\n", Ok(RespType::BulkError("".into())))]
+    #[case::bulk_error_long(
+        b"!21\r\nReally long text here\r\n",
+        Ok(RespType::BulkError("Really long text here".into()))
+    )]
+    #[case::bulk_error_with_crlf(
+        b"!13\r\nTest\r\nAnother\r\n",
+        Ok(RespType::BulkError("Test\r\nAnother".into()))
+    )]
+    #[case::bulk_error_mismatch_length(
+        b"!7\r\nTest\r\n",
+        Err(anyhow::anyhow!("Message did not match the expected length. Expected: 7, got: 6."))
+    )]
+    #[case::bulk_error_invalid_length(
+        b"!4a\r\nTest\r\n",
+        Err(anyhow::anyhow!("invalid digit found in string"))
+    )]
+    #[case::bulk_error_missing_crlf(
+        b"!4\r\nTest",
+        Err(anyhow::anyhow!("Expected CRLF."))
+    )]
+    #[case::bulk_error_missing_lf(
+        b"!4\r\nTest\r",
+        Err(anyhow::anyhow!("Expected CRLF."))
+    )]
+    #[case::bulk_error_expected_crlf(
+        b"!4\r\nTestab",
         Err(anyhow::anyhow!("Expected CRLF."))
     )]
     // Arrays
@@ -362,11 +447,18 @@ mod tests {
     // Simple strings
     #[case::simple_string(RespType::SimpleString("Test".into()), "+Test\r\n")]
     #[case::simple_string_empty(RespType::SimpleString("".into()), "+\r\n")]
+    // Simple errors
+    #[case::simple_string(RespType::SimpleError("Test".into()), "-Test\r\n")]
+    #[case::simple_string_empty(RespType::SimpleError("".into()), "-\r\n")]
     // Bulk strings
     #[case::bulk_string(RespType::BulkString(Some("Test".into())), "$4\r\nTest\r\n")]
     #[case::bulk_string_empty(RespType::BulkString(Some("".into())), "$0\r\n\r\n")]
     #[case::bulk_string_with_clrf(RespType::BulkString(Some("Test\r\nAnother".into())), "$13\r\nTest\r\nAnother\r\n")]
     #[case::bulk_string_null(RespType::BulkString(None), "$-1\r\n")]
+    // Bulk errors
+    #[case::simple_string(RespType::BulkError("Test".into()), "!4\r\nTest\r\n")]
+    #[case::simple_string_empty(RespType::BulkError("".into()), "!0\r\n\r\n")]
+    #[case::simple_string(RespType::BulkError("SYNTAX invalid syntax".into()), "!21\r\nSYNTAX invalid syntax\r\n")]
     // Arrays
     // Null
     #[case::null(RespType::Null(), "_\r\n")]
