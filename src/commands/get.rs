@@ -5,8 +5,8 @@ use anyhow::{Context, Result};
 /// Parses the GET options.
 fn parse_get_options<I: IntoIterator<Item = resp::RespType>>(iter: I) -> Result<String> {
     let mut iter = iter.into_iter();
-    let key = resp::extract_string(&iter.next().ok_or(anyhow::anyhow!("Missing key option."))?)
-        .context("Failed to extract key.")?;
+    let key = resp::extract_string(&iter.next().ok_or(anyhow::anyhow!("Missing key"))?)
+        .context("Failed to extract key")?;
     Ok(key)
 }
 
@@ -114,5 +114,24 @@ mod tests {
         let response = handle(args, &store).await;
         assert_eq!(resp::RespType::Null(), response);
         assert!(store.lock().await.get("expiredkey").is_none());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_handle_missing_key(store: crate::store::Store) {
+        let args = vec![];
+        let expected = resp::RespType::BulkError("ERR Missing key for 'GET' command".into());
+        let response = handle(args.clone(), &store).await;
+        assert_eq!(expected, response);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_handle_invalid_key_type(store: crate::store::Store) {
+        let args = vec![resp::RespType::Array(vec![])];
+        let expected =
+            resp::RespType::BulkError("ERR Failed to extract key for 'GET' command".into());
+        let response = handle(args.clone(), &store).await;
+        assert_eq!(expected, response);
     }
 }
