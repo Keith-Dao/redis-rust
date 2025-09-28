@@ -83,16 +83,10 @@ mod tests {
         let response = handle(args, &store).await;
         assert_eq!(response, resp::RespType::SimpleString("OK".into()));
 
-        let stored_value = match &store
-            .lock()
-            .await
-            .get(&key)
-            .and_then(|entry| Some(&entry.value))
-        {
-            Some(crate::store::EntryValue::String(value)) => value.clone(),
-            _ => panic!("The wrong entry value type was stored."),
-        };
-        assert_eq!(value, stored_value);
+        let store = store.lock().await;
+        let entry = store.get(&key).unwrap();
+        let expected = crate::store::Entry::new_string(value.clone());
+        assert_eq!(expected, *entry);
     }
 
     #[rstest]
@@ -118,14 +112,9 @@ mod tests {
 
         let store = store.lock().await;
         let entry = store.get(&key).unwrap();
-        assert_eq!(value, value);
-        assert!(entry.deletion_time.is_some());
-
-        tokio::time::advance(tokio::time::Duration::from_millis(duration)).await;
-        assert_eq!(
-            entry.deletion_time.expect("Checked it is some."),
-            tokio::time::Instant::now()
-        );
+        let expected =
+            crate::store::Entry::new_string(value.clone()).with_deletion(duration as u64);
+        assert_eq!(expected, *entry);
     }
 
     // --- Errors ---
