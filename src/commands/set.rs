@@ -117,6 +117,31 @@ mod tests {
         assert_eq!(expected, *entry);
     }
 
+    #[rstest]
+    #[case::string(crate::store::Entry::new_string("old value"))]
+    #[case::list(crate::store::Entry::new_list())]
+    #[tokio::test]
+    async fn test_handle_replace(
+        store: crate::store::Store,
+        key: String,
+        value: String,
+        #[case] old_entry: crate::store::Entry,
+    ) {
+        store.lock().await.insert(key.clone(), old_entry);
+
+        let args = vec![
+            resp::RespType::SimpleString(key.clone()),
+            resp::RespType::SimpleString(value.clone()),
+        ];
+        let response = handle(args, &store).await;
+        assert_eq!(response, resp::RespType::SimpleString("OK".into()));
+
+        let store = store.lock().await;
+        let entry = store.get(&key).unwrap();
+        let expected = crate::store::Entry::new_string(value.clone());
+        assert_eq!(expected, *entry);
+    }
+
     // --- Errors ---
     #[rstest]
     #[tokio::test]
