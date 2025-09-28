@@ -38,7 +38,7 @@ fn parse_set_options<I: IntoIterator<Item = resp::RespType>>(
     Ok((key, entry))
 }
 /// Handles the SET command.
-pub async fn handle(args: Vec<resp::RespType>, store: &store::Store) -> resp::RespType {
+pub async fn handle(args: Vec<resp::RespType>, store: &store::SharedStore) -> resp::RespType {
     let (key, entry) = match parse_set_options(args) {
         Ok(result) => result,
         Err(err) => {
@@ -58,7 +58,7 @@ mod tests {
 
     // --- Fixtures ---
     #[fixture]
-    fn store() -> crate::store::Store {
+    fn store() -> crate::store::SharedStore {
         crate::store::new()
     }
 
@@ -75,7 +75,7 @@ mod tests {
     // --- Tests ---
     #[rstest]
     #[tokio::test]
-    async fn test_handle_basic(store: crate::store::Store, key: String, value: String) {
+    async fn test_handle_basic(store: crate::store::SharedStore, key: String, value: String) {
         let args = vec![
             resp::RespType::SimpleString(key.clone()),
             resp::RespType::SimpleString(value.clone()),
@@ -83,7 +83,7 @@ mod tests {
         let response = handle(args, &store).await;
         assert_eq!(response, resp::RespType::SimpleString("OK".into()));
 
-        let store = store.lock().await;
+        let mut store = store.lock().await;
         let entry = store.get(&key).unwrap();
         let expected = crate::store::Entry::new_string(value.clone());
         assert_eq!(expected, *entry);
@@ -94,7 +94,7 @@ mod tests {
     #[case::px_lower("px")]
     #[tokio::test]
     async fn test_handle_with_px(
-        store: crate::store::Store,
+        store: crate::store::SharedStore,
         key: String,
         value: String,
         #[case] px: String,
@@ -110,7 +110,7 @@ mod tests {
         let response = handle(args, &store).await;
         assert_eq!(response, resp::RespType::SimpleString("OK".into()));
 
-        let store = store.lock().await;
+        let mut store = store.lock().await;
         let entry = store.get(&key).unwrap();
         let expected =
             crate::store::Entry::new_string(value.clone()).with_deletion(duration as u64);
@@ -122,7 +122,7 @@ mod tests {
     #[case::list(crate::store::Entry::new_list())]
     #[tokio::test]
     async fn test_handle_replace(
-        store: crate::store::Store,
+        store: crate::store::SharedStore,
         key: String,
         value: String,
         #[case] old_entry: crate::store::Entry,
@@ -136,7 +136,7 @@ mod tests {
         let response = handle(args, &store).await;
         assert_eq!(response, resp::RespType::SimpleString("OK".into()));
 
-        let store = store.lock().await;
+        let mut store = store.lock().await;
         let entry = store.get(&key).unwrap();
         let expected = crate::store::Entry::new_string(value.clone());
         assert_eq!(expected, *entry);
@@ -145,7 +145,7 @@ mod tests {
     // --- Errors ---
     #[rstest]
     #[tokio::test]
-    async fn test_handle_missing_key(store: crate::store::Store) {
+    async fn test_handle_missing_key(store: crate::store::SharedStore) {
         let args = vec![];
         let response = handle(args, &store).await;
         assert_eq!(
@@ -156,7 +156,7 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn test_handle_invalid_key(store: crate::store::Store) {
+    async fn test_handle_invalid_key(store: crate::store::SharedStore) {
         let args = vec![resp::RespType::Array(vec![])];
         let response = handle(args, &store).await;
         assert_eq!(
@@ -167,7 +167,7 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn test_handle_missing_value(store: crate::store::Store, key: String) {
+    async fn test_handle_missing_value(store: crate::store::SharedStore, key: String) {
         let args = vec![resp::RespType::BulkString(Some(key))];
         let response = handle(args, &store).await;
         assert_eq!(
@@ -178,7 +178,7 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn test_handle_invalid_value(store: crate::store::Store, key: String) {
+    async fn test_handle_invalid_value(store: crate::store::SharedStore, key: String) {
         let args = vec![
             resp::RespType::BulkString(Some(key)),
             resp::RespType::Array(vec![]),
@@ -192,7 +192,11 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn test_handle_invalid_option(store: crate::store::Store, key: String, value: String) {
+    async fn test_handle_invalid_option(
+        store: crate::store::SharedStore,
+        key: String,
+        value: String,
+    ) {
         let args = vec![
             resp::RespType::BulkString(Some(key)),
             resp::RespType::BulkString(Some(value)),
@@ -210,7 +214,7 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn test_handle_invalid_option_type(
-        store: crate::store::Store,
+        store: crate::store::SharedStore,
         key: String,
         value: String,
     ) {
@@ -228,7 +232,11 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn test_handle_missing_px_value(store: crate::store::Store, key: String, value: String) {
+    async fn test_handle_missing_px_value(
+        store: crate::store::SharedStore,
+        key: String,
+        value: String,
+    ) {
         let args = vec![
             resp::RespType::BulkString(Some(key)),
             resp::RespType::BulkString(Some(value)),
@@ -245,7 +253,11 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn test_handle_invalid_px_value(store: crate::store::Store, key: String, value: String) {
+    async fn test_handle_invalid_px_value(
+        store: crate::store::SharedStore,
+        key: String,
+        value: String,
+    ) {
         let args = vec![
             resp::RespType::BulkString(Some(key)),
             resp::RespType::BulkString(Some(value)),
