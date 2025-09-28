@@ -5,7 +5,7 @@ mod store;
 
 use tokio::net::{TcpListener, TcpStream};
 
-async fn handle_stream(stream: TcpStream, store: store::Store) {
+async fn handle_stream(stream: TcpStream, store: store::SharedStore) {
     let mut handler = handler::RespHandler::new(stream);
     handler.run(store).await;
 }

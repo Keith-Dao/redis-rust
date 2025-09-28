@@ -7,7 +7,7 @@ use tokio::{
     net::TcpStream,
 };
 
-async fn get_response(message: resp::RespType, store: &store::Store) -> resp::RespType {
+async fn get_response(message: resp::RespType, store: &store::SharedStore) -> resp::RespType {
     let (command, args) = resp::extract_command(message).unwrap();
     match command.to_lowercase().as_str() {
         "ping" => commands::ping::handle(),
@@ -50,7 +50,7 @@ impl RespHandler {
     }
 
     /// Runs the handler.
-    pub async fn run(&mut self, store: store::Store) {
+    pub async fn run(&mut self, store: store::SharedStore) {
         while let Ok(Some(message)) = self.read_stream().await {
             let response = get_response(message, &store).await;
             self.write_stream(response).await.unwrap();
@@ -65,7 +65,7 @@ mod tests {
 
     // --- Fixtures ---
     #[fixture]
-    fn store() -> crate::store::Store {
+    fn store() -> crate::store::SharedStore {
         crate::store::new()
     }
 
@@ -82,7 +82,7 @@ mod tests {
     // --- Tests ---
     #[rstest]
     #[tokio::test]
-    async fn test_get_response_ping(store: crate::store::Store) {
+    async fn test_get_response_ping(store: crate::store::SharedStore) {
         let message = resp::RespType::Array(vec![resp::RespType::SimpleString("PING".into())]);
         let response = get_response(message, &store).await;
         assert_eq!(resp::RespType::SimpleString("PONG".into()), response);
@@ -90,7 +90,7 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn test_get_response_echo(store: crate::store::Store) {
+    async fn test_get_response_echo(store: crate::store::SharedStore) {
         let expected = "Hello";
         let message = resp::RespType::Array(vec![
             resp::RespType::SimpleString("ECHO".into()),
@@ -103,7 +103,7 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn test_get_response_set_get_flow(
-        store: crate::store::Store,
+        store: crate::store::SharedStore,
         key: String,
         value: String,
     ) {
@@ -165,7 +165,7 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn test_invalid_command(store: crate::store::Store) {
+    async fn test_invalid_command(store: crate::store::SharedStore) {
         let message = resp::RespType::Array(vec![resp::RespType::SimpleString("Invalid".into())]);
         let response = get_response(message, &store).await;
         let expected = resp::RespType::BulkError("ERR Command (Invalid) is not valid".into());
