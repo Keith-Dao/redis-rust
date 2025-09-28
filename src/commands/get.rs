@@ -31,7 +31,10 @@ pub async fn handle(args: Vec<resp::RespType>, store: &store::Store) -> resp::Re
                 }
             }
 
-            resp::RespType::BulkString(Some(entry.get().value.clone()))
+            match &entry.get().value {
+                store::EntryValue::String(value) => resp::RespType::BulkString(Some(value.clone())),
+                _ => resp::RespType::BulkError("WRONGTYPE stored type was not a string".into()),
+            }
         }
         _ => missing_value,
     }
@@ -65,7 +68,7 @@ mod tests {
         store
             .lock()
             .await
-            .insert(key.clone(), crate::store::Entry::new(value.clone()));
+            .insert(key.clone(), crate::store::Entry::new_string(value.clone()));
 
         let args = vec![resp::RespType::SimpleString(key)];
         let response = handle(args, &store).await;
@@ -86,7 +89,7 @@ mod tests {
         let deletion_time = 0u32;
         store.lock().await.insert(
             key.clone(),
-            crate::store::Entry::new(value.clone()).with_deletion(deletion_time),
+            crate::store::Entry::new_string(value.clone()).with_deletion(deletion_time),
         );
 
         let args = vec![resp::RespType::SimpleString(key.clone())];
@@ -103,7 +106,7 @@ mod tests {
         let deletion_time = 300;
         store.lock().await.insert(
             key.clone(),
-            crate::store::Entry::new(value.clone()).with_deletion(deletion_time),
+            crate::store::Entry::new_string(value.clone()).with_deletion(deletion_time),
         );
 
         let args = vec![resp::RespType::SimpleString(key)];

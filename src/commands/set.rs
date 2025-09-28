@@ -13,7 +13,7 @@ fn parse_set_options<I: IntoIterator<Item = resp::RespType>>(
 
     let value = resp::extract_string(&iter.next().ok_or(anyhow::anyhow!("Missing value"))?)
         .context("Failed to extract value")?;
-    let mut entry = store::Entry::new(value);
+    let mut entry = store::Entry::new_string(value);
     while let Some(token) = &iter.next() {
         let option = resp::extract_string(token).context("Failed to extract option")?;
 
@@ -83,8 +83,16 @@ mod tests {
         let response = handle(args, &store).await;
         assert_eq!(response, resp::RespType::SimpleString("OK".into()));
 
-        let stored_value = store.lock().await.get(&key).unwrap().value.clone();
-        assert_eq!(stored_value, value);
+        let stored_value = match &store
+            .lock()
+            .await
+            .get(&key)
+            .and_then(|entry| Some(&entry.value))
+        {
+            Some(crate::store::EntryValue::String(value)) => value.clone(),
+            _ => panic!("The wrong entry value type was stored."),
+        };
+        assert_eq!(value, stored_value);
     }
 
     #[rstest]
