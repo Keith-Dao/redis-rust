@@ -7,6 +7,7 @@ use tokio::sync::Mutex;
 #[derive(PartialEq, Debug)]
 /// An entry value.
 pub enum EntryValue {
+    List(Vec<String>),
     String(String),
 }
 
@@ -23,6 +24,15 @@ impl Entry {
     /// Creates a new Redis entry for a string.
     pub fn new_string<T: Into<String>>(value: T) -> Self {
         let value = EntryValue::String(value.into());
+        Self {
+            value,
+            deletion_time: None,
+        }
+    }
+
+    /// Creates a new Redis entry for a list.
+    pub fn new_list() -> Self {
+        let value = EntryValue::List(Vec::new());
         Self {
             value,
             deletion_time: None,
@@ -54,13 +64,23 @@ mod test {
 
     // --- Tests ---
     #[rstest]
-    fn test_new() {
+    fn test_string() {
         let value = "value";
         let expected = Entry {
             value: EntryValue::String(value.into()),
             deletion_time: None,
         };
         assert_eq!(expected, Entry::new_string(value));
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_new_list() {
+        let expected = Entry {
+            value: EntryValue::List(vec![]),
+            deletion_time: None,
+        };
+        assert_eq!(expected, Entry::new_list());
     }
 
     #[rstest]

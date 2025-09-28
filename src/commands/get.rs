@@ -33,7 +33,7 @@ pub async fn handle(args: Vec<resp::RespType>, store: &store::Store) -> resp::Re
 
             match &entry.get().value {
                 store::EntryValue::String(value) => resp::RespType::BulkString(Some(value.clone())),
-                _ => resp::RespType::BulkError("WRONGTYPE stored type was not a string".into()),
+                _ => resp::RespType::BulkError("WRONGTYPE stored type is not a string".into()),
             }
         }
         _ => missing_value,
@@ -135,6 +135,19 @@ mod tests {
         let expected =
             resp::RespType::BulkError("ERR Failed to extract key for 'GET' command".into());
         let response = handle(args.clone(), &store).await;
+        assert_eq!(expected, response);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_handle_invalid_store_type(store: crate::store::Store, key: String) {
+        store
+            .lock()
+            .await
+            .insert(key.clone(), crate::store::Entry::new_list());
+        let args = vec![resp::RespType::BulkString(Some(key.clone()))];
+        let expected = resp::RespType::BulkError("WRONGTYPE stored type is not a string".into());
+        let response = handle(args, &store).await;
         assert_eq!(expected, response);
     }
 }
