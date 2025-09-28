@@ -5,16 +5,24 @@ use tokio::sync::Mutex;
 
 // --- Store entry ---
 #[derive(PartialEq, Debug)]
+/// An entry value.
+pub enum EntryValue {
+    String(String),
+}
+
+impl EntryValue {}
+
+#[derive(PartialEq, Debug)]
 /// An entry in the Redis store.
 pub struct Entry {
-    pub value: String,
+    pub value: EntryValue,
     pub deletion_time: Option<tokio::time::Instant>,
 }
 
 impl Entry {
-    /// Creates a new Redis entry.
-    pub fn new<T: Into<String>>(value: T) -> Self {
-        let value = value.into();
+    /// Creates a new Redis entry for a string.
+    pub fn new_string<T: Into<String>>(value: T) -> Self {
+        let value = EntryValue::String(value.into());
         Self {
             value,
             deletion_time: None,
@@ -49,10 +57,10 @@ mod test {
     fn test_new() {
         let value = "value";
         let expected = Entry {
-            value: value.into(),
+            value: EntryValue::String(value.into()),
             deletion_time: None,
         };
-        assert_eq!(expected, Entry::new(value));
+        assert_eq!(expected, Entry::new_string(value));
     }
 
     #[rstest]
@@ -62,11 +70,11 @@ mod test {
         let value = "value";
         let duration = 100;
         let expected = Entry {
-            value: value.into(),
+            value: EntryValue::String(value.into()),
             deletion_time: Some(
                 tokio::time::Instant::now() + tokio::time::Duration::from_millis(duration),
             ),
         };
-        assert_eq!(expected, Entry::new(value).with_deletion(duration));
+        assert_eq!(expected, Entry::new_string(value).with_deletion(duration));
     }
 }
