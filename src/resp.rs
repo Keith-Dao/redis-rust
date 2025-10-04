@@ -82,10 +82,10 @@ impl RespType {
     /// Parses a buffer for a bulk string.
     fn parse_bulk_string(buffer: &mut BytesMut) -> Result<RespType> {
         trace!("Parsing bulk string: {:?}", buffer);
-        let expected_message_length = parse_num(read_until_crlf(buffer).expect(&format!(
-            "Bulk string missing length segment: {:?}.",
-            buffer
-        )))? as usize;
+        let expected_message_length = parse_num(
+            read_until_crlf(buffer)
+                .context(format!("Bulk string missing length segment: {:?}.", buffer))?,
+        )? as usize;
 
         if buffer.len() < expected_message_length {
             return Err(anyhow::anyhow!(
@@ -107,7 +107,7 @@ impl RespType {
         trace!("Parsing bulk error: {:?}", buffer);
         let expected_message_length = parse_num(
             read_until_crlf(buffer)
-                .expect(&format!("Bulk error missing length segment: {:?}.", buffer)),
+                .context(format!("Bulk error missing length segment: {:?}.", buffer))?,
         )? as usize;
 
         if buffer.len() < expected_message_length {
@@ -150,13 +150,11 @@ impl RespType {
 
         let mut messages = vec![];
         for _ in 0..array_length {
-            let message = RespType::from_bytes(buffer).with_context(|| {
-                format!(
-                    "Message did not match expected length. Expected: {}, got: {}.",
-                    array_length,
-                    messages.len()
-                )
-            })?;
+            let message = RespType::from_bytes(buffer).context(format!(
+                "Message did not match expected length. Expected: {}, got: {}.",
+                array_length,
+                messages.len()
+            ))?;
             messages.push(message);
         }
 
@@ -392,6 +390,10 @@ mod tests {
         b"$4\r\nTestab",
         Err(anyhow::anyhow!("Expected CRLF."))
     )]
+    #[case::bulk_string_missing_length(
+        b"$4",
+        Err(anyhow::anyhow!("Bulk string missing length segment: b\"4\"."))
+    )]
     // Bulk errors
     #[case::bulk_error(b"!4\r\nTest\r\n", Ok(RespType::BulkError("Test".into())))]
     #[case::bulk_error_empty(b"!0\r\n\r\n", Ok(RespType::BulkError("".into())))]
@@ -422,6 +424,10 @@ mod tests {
     #[case::bulk_error_expected_crlf(
         b"!4\r\nTestab",
         Err(anyhow::anyhow!("Expected CRLF."))
+    )]
+    #[case::bulk_error_missing_length(
+        b"!4",
+        Err(anyhow::anyhow!("Bulk error missing length segment: b\"4\"."))
     )]
     // Integer
     #[case::integer_zero(b":0\r\n", Ok(RespType::Integer(0)))]
