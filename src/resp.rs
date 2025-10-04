@@ -457,6 +457,7 @@ mod tests {
         b"*2a\r\n+Test\r\n+Another\r\n",
         Err(anyhow::anyhow!("invalid digit found in string"))
     )]
+    #[case::array_missing_length(b"*2", Err(anyhow::anyhow!("Array missing length segment: b\"2\".")))]
     // Null
     /// Tests the parser.
     fn test_parse(#[case] bytes: &[u8], #[case] expected: Result<RespType>) {
