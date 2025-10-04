@@ -342,8 +342,8 @@ mod tests {
             assert_eq!(expected.unwrap(), result.unwrap());
         } else {
             assert_eq!(
-                expected.unwrap_err().root_cause().to_string(),
-                result.unwrap_err().root_cause().to_string()
+                expected.unwrap_err().to_string(),
+                result.unwrap_err().to_string()
             );
         }
     }
