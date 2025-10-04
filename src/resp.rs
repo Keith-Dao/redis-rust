@@ -17,7 +17,8 @@ pub fn extract_string(message: &RespType) -> Result<String> {
 pub fn extract_command(message: RespType) -> Result<(String, Vec<RespType>)> {
     match message {
         RespType::Array(vec) => Ok((
-            extract_string(&vec[0]).unwrap(),
+            extract_string(&vec[0])
+                .context("Failed to extract the message from the first argument.")?,
             vec.into_iter().skip(1).collect(),
         )),
         _ => Err(anyhow::anyhow!("Invalid command: {:?}", message)),
@@ -41,9 +42,10 @@ fn read_until_crlf(buffer: &mut BytesMut) -> Option<BytesMut> {
 /// Parses a byte slice into an integer.
 fn parse_num(buffer: BytesMut) -> Result<i64> {
     trace!("Attempting to parse number from buffer: {:?}.", buffer);
-    String::from_utf8(buffer.to_vec())?
+    String::from_utf8(buffer.to_vec())
+        .context("Failed to extract string with parsing number.")?
         .parse::<i64>()
-        .map_err(|e| anyhow::anyhow!(e))
+        .context("Failed to parse the number.")
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -62,21 +64,27 @@ impl RespType {
     /// Parses the buffer for a simple string.
     fn parse_simple_string(buffer: &mut BytesMut) -> Result<RespType> {
         trace!("Parsing simple string: {:?}.", buffer);
-        if let Some(message) = read_until_crlf(buffer) {
-            return Ok(RespType::SimpleString(String::from_utf8(message.to_vec())?));
-        }
-
-        Err(anyhow::anyhow!("Invalid simple string: {:?}.", buffer))
+        Ok(RespType::SimpleString(
+            String::from_utf8(
+                read_until_crlf(buffer)
+                    .context(format!("Invalid simple string: {:?}.", buffer))?
+                    .to_vec(),
+            )
+            .context("Failed to parse simple string.")?,
+        ))
     }
 
     /// Parses the buffer for a simple error.
     fn parse_simple_error(buffer: &mut BytesMut) -> Result<RespType> {
         trace!("Parsing simple error: {:?}.", buffer);
-        if let Some(message) = read_until_crlf(buffer) {
-            return Ok(RespType::SimpleError(String::from_utf8(message.to_vec())?));
-        }
-
-        Err(anyhow::anyhow!("Invalid simple error: {:?}.", buffer))
+        Ok(RespType::SimpleError(
+            String::from_utf8(
+                read_until_crlf(buffer)
+                    .context(format!("Invalid simple error: {:?}.", buffer))?
+                    .to_vec(),
+            )
+            .context("Failed to parse simple error.")?,
+        ))
     }
 
     /// Parses a buffer for a bulk string.
@@ -85,7 +93,9 @@ impl RespType {
         let expected_message_length = parse_num(
             read_until_crlf(buffer)
                 .context(format!("Bulk string missing length segment: {:?}.", buffer))?,
-        )? as usize;
+        )
+        .context("Failed to parse bulk string length.")?
+            as usize;
 
         if buffer.len() < expected_message_length {
             return Err(anyhow::anyhow!(
@@ -108,7 +118,9 @@ impl RespType {
         let expected_message_length = parse_num(
             read_until_crlf(buffer)
                 .context(format!("Bulk error missing length segment: {:?}.", buffer))?,
-        )? as usize;
+        )
+        .context("Failed to parse bulk error length.")?
+            as usize;
 
         if buffer.len() < expected_message_length {
             return Err(anyhow::anyhow!(
@@ -139,14 +151,11 @@ impl RespType {
     /// Parses a buffer for an array.
     fn parse_array(buffer: &mut BytesMut) -> Result<RespType> {
         trace!("Parsing array: {:?}", buffer);
-        let array_length = if let Some(message) = read_until_crlf(buffer) {
-            parse_num(message)? as usize
-        } else {
-            return Err(anyhow::anyhow!(
-                "Array missing length segment: {:?}.",
-                buffer
-            ));
-        };
+        let array_length = parse_num(
+            read_until_crlf(buffer)
+                .context(format!("Array missing length segment: {:?}.", buffer))?,
+        )
+        .context("Failed to parse array length.")?;
 
         let mut messages = vec![];
         for _ in 0..array_length {
@@ -325,15 +334,15 @@ mod tests {
     #[case::leading_zero(b"0123", Ok(123))]
     #[case::positive(b"+123", Ok(123))]
     #[case::negative(b"-123", Ok(-123))]
-    #[case::invalid_num(b"123a", Err(anyhow::anyhow!("invalid digit found in string")))]
-    #[case::float(b"123.0", Err(anyhow::anyhow!("invalid digit found in string")))]
-    #[case::empty(b"", Err(anyhow::anyhow!("cannot parse integer from empty string")))]
-    #[case::only_sign(b"-", Err(anyhow::anyhow!("invalid digit found in string")))]
-    #[case::whitespace_before(b" 123", Err(anyhow::anyhow!("invalid digit found in string")))]
+    #[case::invalid_num(b"123a", Err(anyhow::anyhow!("Failed to parse the number.")))]
+    #[case::float(b"123.0", Err(anyhow::anyhow!("Failed to parse the number.")))]
+    #[case::empty(b"", Err(anyhow::anyhow!("Failed to parse the number.")))]
+    #[case::only_sign(b"-", Err(anyhow::anyhow!("Failed to parse the number.")))]
+    #[case::whitespace_before(b" 123", Err(anyhow::anyhow!("Failed to parse the number.")))]
     #[case::max_i64(b"9223372036854775807", Ok(i64::MAX))]
     #[case::min_i64(b"-9223372036854775808", Ok(i64::MIN))]
-    #[case::overflow_pos(b"9223372036854775808", Err(anyhow::anyhow!("number too large to fit in target type")))]
-    #[case::overflow_neg(b"-9223372036854775809", Err(anyhow::anyhow!("number too small to fit in target type")))]
+    #[case::overflow_pos(b"9223372036854775808", Err(anyhow::anyhow!("Failed to parse the number.")))]
+    #[case::overflow_neg(b"-9223372036854775809", Err(anyhow::anyhow!("Failed to parse the number.")))]
     /// Tests the parse number function.
     fn test_parse_num(#[case] buffer: &[u8], #[case] expected: Result<i64>) {
         let result = parse_num(buffer.into());
@@ -397,7 +406,7 @@ mod tests {
     )]
     #[case::bulk_string_invalid_length(
         b"$4a\r\nTest\r\n",
-        Err(anyhow::anyhow!("invalid digit found in string"))
+        Err(anyhow::anyhow!("Failed to parse bulk string length."))
     )]
     #[case::bulk_string_missing_crlf(
         b"$4\r\nTest",
@@ -432,7 +441,7 @@ mod tests {
     )]
     #[case::bulk_error_invalid_length(
         b"!4a\r\nTest\r\n",
-        Err(anyhow::anyhow!("invalid digit found in string"))
+        Err(anyhow::anyhow!("Failed to parse bulk error length."))
     )]
     #[case::bulk_error_missing_crlf(
         b"!4\r\nTest",
@@ -476,7 +485,7 @@ mod tests {
     )]
     #[case::array_invalid_length(
         b"*2a\r\n+Test\r\n+Another\r\n",
-        Err(anyhow::anyhow!("invalid digit found in string"))
+        Err(anyhow::anyhow!("Failed to parse array length."))
     )]
     #[case::array_missing_length(b"*2", Err(anyhow::anyhow!("Array missing length segment: b\"2\".")))]
     // Null
