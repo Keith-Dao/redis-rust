@@ -11,8 +11,6 @@ pub enum EntryValue {
     String(String),
 }
 
-impl EntryValue {}
-
 #[derive(PartialEq, Debug, Clone)]
 /// An entry in the Redis store.
 pub struct Entry {
