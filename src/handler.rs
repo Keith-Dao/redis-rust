@@ -14,6 +14,7 @@ async fn get_response(message: resp::RespType, store: &store::SharedStore) -> re
         "echo" => commands::echo::handle(args),
         "set" => commands::set::handle(args, &store).await,
         "get" => commands::get::handle(args, &store).await,
+        "rpush" => commands::rpush::handle(args, &store).await,
         _ => resp::RespType::BulkError(format!("ERR Command ({command}) is not valid")),
     }
 }
