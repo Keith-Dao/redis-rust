@@ -161,6 +161,17 @@ impl RespType {
         Ok(RespType::Array(messages))
     }
 
+    /// Parses a buffer for a null.
+    fn parse_null(buffer: &mut BytesMut) -> Result<RespType> {
+        trace!("Parsing null: {:?}", buffer);
+        let message = read_until_crlf(buffer).context("Null missing CRLF.")?;
+        if !message.is_empty() {
+            return Err(anyhow::anyhow!("Null should not have any value."));
+        }
+
+        Ok(RespType::Null())
+    }
+
     /// Parses a buffer for the message.
     pub fn from_bytes(buffer: &mut BytesMut) -> Result<Self> {
         trace!("Parsing message: {:?}.", buffer);
@@ -173,6 +184,7 @@ impl RespType {
                 '!' => Self::parse_bulk_error(buffer),
                 ':' => Self::parse_integer(buffer),
                 '*' => Self::parse_array(buffer),
+                '_' => Self::parse_null(buffer),
                 _ => Err(anyhow::anyhow!("Invalid message type.")),
             }
         } else {
@@ -468,6 +480,9 @@ mod tests {
     )]
     #[case::array_missing_length(b"*2", Err(anyhow::anyhow!("Array missing length segment: b\"2\".")))]
     // Null
+    #[case::null(b"_\r\n", Ok(RespType::Null()))]
+    #[case::null_missing_crlf(b"_", Err(anyhow::anyhow!("Null missing CRLF.")))]
+    #[case::null_invalid(b"_abc\r\n", Err(anyhow::anyhow!("Null should not have any value.")))]
     // Invalid type
     #[case::invalid(b"123", Err(anyhow::anyhow!("Invalid message type.")))]
     /// Tests the parser.
