@@ -187,10 +187,19 @@ impl RespType {
             Self::SimpleError(s) => format!("-{s}\r\n"),
             Self::BulkString(Some(s)) => format!("${}\r\n{s}\r\n", s.len()),
             Self::BulkString(None) => "$-1\r\n".into(),
+            Self::Array(array) => {
+                format!(
+                    "*{}\r\n{}",
+                    array.len(),
+                    array
+                        .iter()
+                        .map(|element| element.serialize())
+                        .fold(String::new(), |result, x| result + &x)
+                )
+            }
             Self::BulkError(s) => format!("!{}\r\n{s}\r\n", s.len()),
             Self::Integer(num) => format!(":{num}\r\n"),
             Self::Null() => "_\r\n".into(),
-            _ => panic!("Invalid type to serialise."),
         }
     }
 }
@@ -497,6 +506,17 @@ mod tests {
     #[case::integer_positive(RespType::Integer(123), ":123\r\n")]
     #[case::integer_negative(RespType::Integer(-123), ":-123\r\n")]
     // Arrays
+    #[case::array_empty(RespType::Array(vec![]), "*0\r\n")]
+    #[case::array_one_element(RespType::Array(vec![RespType::SimpleString("Test".into())]), "*1\r\n+Test\r\n")]
+    #[case::array_multiple(
+        RespType::Array(vec![
+            RespType::SimpleString("Test".into()),
+            RespType::BulkString(Some("".into())),
+            RespType::BulkError("Error".into()),
+            RespType::Integer(-123),
+        ]),
+        "*4\r\n+Test\r\n$0\r\n\r\n!5\r\nError\r\n:-123\r\n"
+    )]
     // Null
     #[case::null(RespType::Null(), "_\r\n")]
     /// Tests the RESP serialization.
