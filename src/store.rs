@@ -77,7 +77,7 @@ impl Store {
     }
 
     /// Gets the given key's entry and removes the entry if it has expired.
-    pub fn entry(&mut self, key: String) -> std::collections::hash_map::Entry<String, Entry> {
+    pub fn entry(&mut self, key: String) -> std::collections::hash_map::Entry<'_, String, Entry> {
         self.remove_if_expired(&key);
         self.store.entry(key)
     }
