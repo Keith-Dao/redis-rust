@@ -459,6 +459,8 @@ mod tests {
     )]
     #[case::array_missing_length(b"*2", Err(anyhow::anyhow!("Array missing length segment: b\"2\".")))]
     // Null
+    // Invalid type
+    #[case::invalid(b"123", Err(anyhow::anyhow!("Invalid message type.")))]
     /// Tests the parser.
     fn test_parse(#[case] bytes: &[u8], #[case] expected: Result<RespType>) {
         let result = RespType::from_bytes(&mut bytes.into());
