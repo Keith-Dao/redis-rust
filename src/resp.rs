@@ -54,6 +54,7 @@ pub enum RespType {
     BulkString(Option<String>),
     Array(Vec<RespType>),
     BulkError(String),
+    Integer(i64),
     Null(),
 }
 
@@ -124,6 +125,17 @@ impl RespType {
         Ok(RespType::BulkError(message))
     }
 
+    /// Parses a buffer for a bulk error.
+    fn parse_integer(buffer: &mut BytesMut) -> Result<RespType> {
+        trace!("Parsing integer: {:?}", buffer);
+
+        let number =
+            parse_num(read_until_crlf(buffer).context(format!("Number missing: {:?}.", buffer))?)
+                .context("Failed to parse number.")?;
+
+        Ok(RespType::Integer(number))
+    }
+
     /// Parses a buffer for an array.
     fn parse_array(buffer: &mut BytesMut) -> Result<RespType> {
         trace!("Parsing array: {:?}", buffer);
@@ -161,6 +173,7 @@ impl RespType {
                 '-' => Self::parse_simple_error(buffer),
                 '$' => Self::parse_bulk_string(buffer),
                 '!' => Self::parse_bulk_error(buffer),
+                ':' => Self::parse_integer(buffer),
                 '*' => Self::parse_array(buffer),
                 _ => Err(anyhow::anyhow!("Invalid message type.")),
             }
@@ -177,6 +190,7 @@ impl RespType {
             Self::BulkString(Some(s)) => format!("${}\r\n{s}\r\n", s.len()),
             Self::BulkString(None) => "$-1\r\n".into(),
             Self::BulkError(s) => format!("!{}\r\n{s}\r\n", s.len()),
+            Self::Integer(num) => format!(":{num}\r\n"),
             Self::Null() => "_\r\n".into(),
             _ => panic!("Invalid type to serialise."),
         }
@@ -409,6 +423,16 @@ mod tests {
         b"!4\r\nTestab",
         Err(anyhow::anyhow!("Expected CRLF."))
     )]
+    // Integer
+    #[case::integer_zero(b":0\r\n", Ok(RespType::Integer(0)))]
+    #[case::integer_positive(b":1\r\n", Ok(RespType::Integer(1)))]
+    #[case::integer_positive_with_sign(b":+1\r\n", Ok(RespType::Integer(1)))]
+    #[case::integer_negative(b":-1\r\n", Ok(RespType::Integer(-1)))]
+    #[case::integer_negative_with_sign(b":-1\r\n", Ok(RespType::Integer(-1)))]
+    #[case::integer_missing_clrf(b":", Err(anyhow::anyhow!("Number missing: b\"\".")))]
+    #[case::integer_missing(b":\r\n", Err(anyhow::anyhow!("Failed to parse number.")))]
+    #[case::integer_invalid_symbol(b":=120\r\n", Err(anyhow::anyhow!("Failed to parse number.")))]
+    #[case::integer_invalid_number(b":abc\r\n", Err(anyhow::anyhow!("Failed to parse number.")))]
     // Arrays
     #[case::array(
         b"*3\r\n+Test\r\n$4\r\nTest\r\n$7\r\nAnother\r\n",
@@ -459,6 +483,10 @@ mod tests {
     #[case::simple_string(RespType::BulkError("Test".into()), "!4\r\nTest\r\n")]
     #[case::simple_string_empty(RespType::BulkError("".into()), "!0\r\n\r\n")]
     #[case::simple_string(RespType::BulkError("SYNTAX invalid syntax".into()), "!21\r\nSYNTAX invalid syntax\r\n")]
+    // Integers
+    #[case::integer_zero(RespType::Integer(0), ":0\r\n")]
+    #[case::integer_positive(RespType::Integer(123), ":123\r\n")]
+    #[case::integer_negative(RespType::Integer(-123), ":-123\r\n")]
     // Arrays
     // Null
     #[case::null(RespType::Null(), "_\r\n")]
