@@ -15,7 +15,7 @@ async fn get_response(message: resp::RespType, store: &store::SharedStore) -> re
         "set" => commands::set::handle(args, &store).await,
         "get" => commands::get::handle(args, &store).await,
         "rpush" => commands::rpush::handle(args, &store).await,
-        _ => resp::RespType::BulkError(format!("ERR Command ({command}) is not valid")),
+        _ => resp::RespType::SimpleError(format!("ERR Command ({command}) is not valid")),
     }
 }
 
@@ -169,7 +169,7 @@ mod tests {
     async fn test_invalid_command(store: crate::store::SharedStore) {
         let message = resp::RespType::Array(vec![resp::RespType::SimpleString("Invalid".into())]);
         let response = get_response(message, &store).await;
-        let expected = resp::RespType::BulkError("ERR Command (Invalid) is not valid".into());
+        let expected = resp::RespType::SimpleError("ERR Command (Invalid) is not valid".into());
         assert_eq!(expected, response);
     }
 }
