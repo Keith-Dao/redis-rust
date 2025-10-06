@@ -80,88 +80,119 @@ mod tests {
         "value".into()
     }
 
+    fn make_handle_args(args: &Vec<resp::RespType>) -> Vec<resp::RespType> {
+        args.clone().into_iter().skip(1).collect()
+    }
+
     // --- Tests ---
+    // ---- Commands ----
     #[rstest]
+    #[case::lower("ping")]
+    #[case::upper("PING")]
+    #[case::mixed("PinG")]
     #[tokio::test]
-    async fn test_get_response_ping(store: crate::store::SharedStore) {
-        let message = resp::RespType::Array(vec![resp::RespType::SimpleString("PING".into())]);
+    async fn test_get_response_ping(store: crate::store::SharedStore, #[case] command: String) {
+        let message = resp::RespType::Array(vec![resp::RespType::SimpleString(command)]);
+        let expected = commands::ping::handle();
         let response = get_response(message, &store).await;
-        assert_eq!(resp::RespType::SimpleString("PONG".into()), response);
+        assert_eq!(expected, response);
     }
 
     #[rstest]
+    #[case::lower("echo")]
+    #[case::upper("ECHO")]
+    #[case::mixed("EchO")]
     #[tokio::test]
-    async fn test_get_response_echo(store: crate::store::SharedStore) {
-        let expected = "Hello";
-        let message = resp::RespType::Array(vec![
-            resp::RespType::SimpleString("ECHO".into()),
-            resp::RespType::SimpleString(expected.into()),
-        ]);
-        let response = get_response(message, &store).await;
-        assert_eq!(resp::RespType::BulkString(Some(expected.into())), response);
-    }
-
-    #[rstest]
-    #[tokio::test]
-    async fn test_get_response_set_get_flow(
+    async fn test_get_response_echo(
         store: crate::store::SharedStore,
+        #[case] command: String,
+        value: String,
+    ) {
+        let args = vec![
+            resp::RespType::SimpleString(command),
+            resp::RespType::SimpleString(value),
+        ];
+        let expected = commands::echo::handle(make_handle_args(&args));
+
+        let message = resp::RespType::Array(args);
+        let response = get_response(message, &store).await;
+        assert_eq!(expected, response);
+    }
+
+    #[rstest]
+    #[case::lower("get")]
+    #[case::upper("GET")]
+    #[case::mixed("GeT")]
+    #[tokio::test]
+    async fn test_get_response_get(
+        store: crate::store::SharedStore,
+        #[case] command: String,
         key: String,
         value: String,
     ) {
-        tokio::time::pause();
-        // SET
-        let set_message = resp::RespType::Array(vec![
-            resp::RespType::SimpleString("SET".into()),
+        store
+            .lock()
+            .await
+            .insert(key.clone(), crate::store::Entry::new_string(value.clone()));
+        let args = vec![
+            resp::RespType::SimpleString(command),
+            resp::RespType::SimpleString(key.clone()),
+        ];
+        let expected = commands::get::handle(make_handle_args(&args), &store).await;
+
+        let get_message = resp::RespType::Array(args);
+        let response = get_response(get_message, &store).await;
+        assert_eq!(expected, response);
+    }
+
+    #[rstest]
+    #[case::lower("set")]
+    #[case::upper("SET")]
+    #[case::mixed("SeT")]
+    #[tokio::test]
+    async fn test_get_response_set(
+        store: crate::store::SharedStore,
+        #[case] command: String,
+        key: String,
+        value: String,
+    ) {
+        let expected_store = crate::store::new();
+        let args = vec![
+            resp::RespType::SimpleString(command),
             resp::RespType::SimpleString(key.clone()),
             resp::RespType::SimpleString(value.clone()),
-        ]);
-        let set_response = get_response(set_message, &store).await;
-        assert_eq!(resp::RespType::SimpleString("OK".into()), set_response);
+        ];
+        let expected = commands::set::handle(make_handle_args(&args), &expected_store).await;
 
-        // GET
-        let get_message = resp::RespType::Array(vec![
-            resp::RespType::SimpleString("GET".into()),
+        let set_message = resp::RespType::Array(args);
+        let response = get_response(set_message, &store).await;
+        assert_eq!(expected, response);
+        assert_eq!(*expected_store.lock().await, *store.lock().await);
+    }
+
+    #[rstest]
+    #[case::lower("rpush")]
+    #[case::upper("RPUSH")]
+    #[case::mixed("RPusH")]
+    #[tokio::test]
+    async fn test_get_response_rpush(
+        store: crate::store::SharedStore,
+        #[case] command: String,
+        key: String,
+        value: String,
+    ) {
+        let expected_store = crate::store::new();
+        let args = vec![
+            resp::RespType::SimpleString(command),
             resp::RespType::SimpleString(key.clone()),
-        ]);
-        let response = get_response(get_message.clone(), &store).await;
-        assert_eq!(resp::RespType::BulkString(Some(value.clone())), response);
+            resp::RespType::SimpleString(value.clone()),
+        ];
+        let expected = commands::rpush::handle(make_handle_args(&args), &expected_store).await;
 
-        // SET with PX and GET after expiration
-        let expired_key = "expired_key";
-        let expired_value = "expired_value";
-        let set_px_message = resp::RespType::Array(vec![
-            resp::RespType::SimpleString("SET".into()),
-            resp::RespType::SimpleString(expired_key.into()),
-            resp::RespType::SimpleString(expired_value.into()),
-            resp::RespType::SimpleString("PX".into()),
-            resp::RespType::SimpleString("10".into()), // 10 milliseconds
-        ]);
-
-        let set_px_response = get_response(set_px_message, &store).await;
-        assert_eq!(resp::RespType::SimpleString("OK".into()), set_px_response);
-
-        // Key still valid
-        tokio::time::advance(tokio::time::Duration::from_millis(9)).await;
-        let get_exp_message = resp::RespType::Array(vec![
-            resp::RespType::SimpleString("GET".into()),
-            resp::RespType::SimpleString(expired_key.into()),
-        ]);
-        let get_exp_response = get_response(get_exp_message, &store).await;
-        assert_eq!(
-            get_exp_response,
-            resp::RespType::BulkString(Some(expired_value.into()))
-        );
-
-        // Key expired now
-        tokio::time::advance(tokio::time::Duration::from_millis(1)).await;
-        let get_exp_message = resp::RespType::Array(vec![
-            resp::RespType::SimpleString("GET".into()),
-            resp::RespType::SimpleString(expired_key.into()),
-        ]);
-        let get_exp_response = get_response(get_exp_message, &store).await;
-        assert_eq!(resp::RespType::Null(), get_exp_response);
-        let response = get_response(get_message, &store).await;
-        assert_eq!(resp::RespType::BulkString(Some(value.clone())), response);
+        let set_message = resp::RespType::Array(args);
+        let response = get_response(set_message, &store).await;
+        assert_eq!(expected, response);
+        assert_eq!(*expected_store.lock().await, *store.lock().await);
     }
 
     #[rstest]
