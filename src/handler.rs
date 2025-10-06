@@ -2,10 +2,7 @@
 use crate::{commands, resp, store};
 use anyhow::Result;
 use bytes::BytesMut;
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
-    net::TcpStream,
-};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 async fn get_response(message: resp::RespType, store: &store::SharedStore) -> resp::RespType {
     let (command, args) = resp::extract_command(message).unwrap();
@@ -20,14 +17,17 @@ async fn get_response(message: resp::RespType, store: &store::SharedStore) -> re
 }
 
 /// Handles reading and writing RESP messages over a TCP stream.
-pub struct RespHandler {
-    stream: TcpStream,
+pub struct RespHandler<T> {
+    stream: T,
     buffer: BytesMut,
 }
 
-impl RespHandler {
+impl<T> RespHandler<T>
+where
+    T: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+{
     /// Creates a new RESP handler.
-    pub fn new(stream: TcpStream) -> Self {
+    pub fn new(stream: T) -> Self {
         Self {
             stream,
             buffer: BytesMut::with_capacity(512),
@@ -78,6 +78,15 @@ mod tests {
     #[fixture]
     fn value() -> String {
         "value".into()
+    }
+
+    #[fixture]
+    fn stream_and_handler() -> (
+        tokio::io::DuplexStream,
+        RespHandler<tokio::io::DuplexStream>,
+    ) {
+        let (client_stream, server_stream) = tokio::io::duplex(512);
+        (client_stream, RespHandler::new(server_stream))
     }
 
     fn make_handle_args(args: &Vec<resp::RespType>) -> Vec<resp::RespType> {
@@ -202,5 +211,105 @@ mod tests {
         let response = get_response(message, &store).await;
         let expected = resp::RespType::SimpleError("ERR Command (Invalid) is not valid".into());
         assert_eq!(expected, response);
+    }
+
+    // ---- Handler ----
+    #[rstest]
+    fn test_handler_new() {
+        let (_, server_stream) = tokio::io::duplex(512);
+        let handler = RespHandler::new(server_stream);
+        assert_eq!(handler.buffer.capacity(), 512);
+        assert!(handler.buffer.is_empty());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_handler_read_empty(
+        stream_and_handler: (
+            tokio::io::DuplexStream,
+            RespHandler<tokio::io::DuplexStream>,
+        ),
+    ) -> Result<()> {
+        let (mut client_stream, mut handler) = stream_and_handler;
+        client_stream.write(b"").await?;
+        client_stream.shutdown().await?;
+
+        match handler.read_stream().await {
+            Ok(None) => (),
+            _ => panic!("Incorrect read."),
+        };
+
+        Ok(())
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_handler_read(
+        stream_and_handler: (
+            tokio::io::DuplexStream,
+            RespHandler<tokio::io::DuplexStream>,
+        ),
+        value: String,
+    ) -> Result<()> {
+        let (mut client_stream, mut handler) = stream_and_handler;
+
+        let expected = resp::RespType::SimpleString(value);
+        client_stream.write(expected.serialize().as_bytes()).await?;
+        client_stream.shutdown().await?;
+
+        match handler.read_stream().await {
+            Ok(Some(message)) => assert_eq!(expected, message),
+            _ => panic!("Incorrect read."),
+        };
+
+        Ok(())
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_handler_write(
+        stream_and_handler: (
+            tokio::io::DuplexStream,
+            RespHandler<tokio::io::DuplexStream>,
+        ),
+        value: String,
+    ) -> Result<()> {
+        let (mut client_stream, mut handler) = stream_and_handler;
+
+        let expected = resp::RespType::SimpleString(value);
+        handler.write_stream(expected.clone()).await?;
+
+        let mut buffer = BytesMut::with_capacity(512);
+        client_stream.read_buf(&mut buffer).await?;
+        assert_eq!(expected.serialize(), buffer);
+
+        Ok(())
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_handler_run(
+        stream_and_handler: (
+            tokio::io::DuplexStream,
+            RespHandler<tokio::io::DuplexStream>,
+        ),
+        store: crate::store::SharedStore,
+    ) -> Result<()> {
+        let (mut client_stream, mut handler) = stream_and_handler;
+
+        let message = resp::RespType::Array(vec![resp::RespType::SimpleString("PING".into())]);
+        client_stream
+            .write_all(message.serialize().as_bytes())
+            .await?;
+        client_stream.shutdown().await?;
+
+        handler.run(store).await;
+
+        let mut buffer = BytesMut::with_capacity(512);
+        client_stream.read_buf(&mut buffer).await?;
+        let expected = resp::RespType::SimpleString("PONG".into());
+        assert_eq!(expected.serialize(), buffer);
+
+        Ok(())
     }
 }
