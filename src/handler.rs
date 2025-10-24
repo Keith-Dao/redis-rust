@@ -1,5 +1,5 @@
 //! This module contains the handler.
-use crate::{commands, resp, store};
+use crate::{commands, commands::Command, resp, store};
 use anyhow::Result;
 use bytes::BytesMut;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
@@ -8,7 +8,7 @@ async fn get_response(message: resp::RespType, store: &store::SharedStore) -> re
     let (command, args) = resp::extract_command(message).unwrap();
     match command.to_lowercase().as_str() {
         "ping" => commands::ping::handle(),
-        "echo" => commands::echo::handle(args),
+        "echo" => commands::echo::Echo().handle(args, &store).await,
         "set" => commands::set::handle(args, &store).await,
         "get" => commands::get::handle(args, &store).await,
         "rpush" => commands::rpush::handle(args, &store).await,
@@ -121,7 +121,9 @@ mod tests {
             resp::RespType::SimpleString(command),
             resp::RespType::SimpleString(value),
         ];
-        let expected = commands::echo::handle(make_handle_args(&args));
+        let expected = commands::echo::Echo()
+            .handle(make_handle_args(&args), &store)
+            .await;
 
         let message = resp::RespType::Array(args);
         let response = get_response(message, &store).await;
