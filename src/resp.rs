@@ -3,8 +3,6 @@ use anyhow::{Context, Result};
 use bytes::{Buf, BytesMut};
 use log::trace;
 
-// TODO: Add proper error handling to expects
-///
 /// Extracts the string from the message.
 pub fn extract_string(message: &RespType) -> Result<String> {
     match message {
