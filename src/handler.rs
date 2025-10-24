@@ -10,7 +10,7 @@ async fn get_response(message: resp::RespType, store: &store::SharedStore) -> re
         "ping" => commands::ping::handle(),
         "echo" => commands::echo::Echo().handle(args, &store).await,
         "set" => commands::set::handle(args, &store).await,
-        "get" => commands::get::handle(args, &store).await,
+        "get" => commands::get::Get().handle(args, &store).await,
         "rpush" => commands::rpush::handle(args, &store).await,
         _ => resp::RespType::SimpleError(format!("ERR Command ({command}) is not valid")),
     }
@@ -149,7 +149,9 @@ mod tests {
             resp::RespType::SimpleString(command),
             resp::RespType::SimpleString(key.clone()),
         ];
-        let expected = commands::get::handle(make_handle_args(&args), &store).await;
+        let expected = commands::get::Get()
+            .handle(make_handle_args(&args), &store)
+            .await;
 
         let get_message = resp::RespType::Array(args);
         let response = get_response(get_message, &store).await;
