@@ -7,7 +7,7 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 async fn get_response(message: resp::RespType, store: &store::SharedStore) -> resp::RespType {
     let (command, args) = resp::extract_command(message).unwrap();
     match command.to_lowercase().as_str() {
-        "ping" => commands::ping::handle(),
+        "ping" => commands::ping::Ping().handle(args, &store).await,
         "echo" => commands::echo::Echo().handle(args, &store).await,
         "set" => commands::set::handle(args, &store).await,
         "get" => commands::get::Get().handle(args, &store).await,
@@ -102,7 +102,7 @@ mod tests {
     #[tokio::test]
     async fn test_get_response_ping(store: crate::store::SharedStore, #[case] command: String) {
         let message = resp::RespType::Array(vec![resp::RespType::SimpleString(command)]);
-        let expected = commands::ping::handle();
+        let expected = commands::ping::Ping().handle(vec![], &store).await;
         let response = get_response(message, &store).await;
         assert_eq!(expected, response);
     }
