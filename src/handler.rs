@@ -9,7 +9,7 @@ async fn get_response(message: resp::RespType, store: &store::SharedStore) -> re
     match command.to_lowercase().as_str() {
         "ping" => commands::ping::Ping().handle(args, &store).await,
         "echo" => commands::echo::Echo().handle(args, &store).await,
-        "set" => commands::set::handle(args, &store).await,
+        "set" => commands::set::Set().handle(args, &store).await,
         "get" => commands::get::Get().handle(args, &store).await,
         "rpush" => commands::rpush::Rpush().handle(args, &store).await,
         _ => resp::RespType::SimpleError(format!("ERR Command ({command}) is not valid")),
@@ -175,7 +175,9 @@ mod tests {
             resp::RespType::SimpleString(key.clone()),
             resp::RespType::SimpleString(value.clone()),
         ];
-        let expected = commands::set::handle(make_handle_args(&args), &expected_store).await;
+        let expected = commands::set::Set()
+            .handle(make_handle_args(&args), &expected_store)
+            .await;
 
         let set_message = resp::RespType::Array(args);
         let response = get_response(set_message, &store).await;
