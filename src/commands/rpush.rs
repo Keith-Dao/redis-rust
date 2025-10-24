@@ -1,5 +1,5 @@
 //! This module contains the RPUSH command.
-use crate::{resp, store};
+use crate::{commands::Command, resp, store};
 use anyhow::{Context, Result};
 
 /// Parses the RPUSH options.
@@ -20,29 +20,43 @@ fn parse_options<I: IntoIterator<Item = resp::RespType>>(iter: I) -> Result<(Str
 
     Ok((key, result))
 }
-/// Handles the RPUSH command.
-pub async fn handle(args: Vec<resp::RespType>, store: &store::SharedStore) -> resp::RespType {
-    let (key, values) = match parse_options(args) {
-        Ok(result) => result,
-        Err(err) => {
-            log::error!("{err}");
-            return resp::RespType::BulkError(format!("ERR {err} for 'RPUSH' command"));
-        }
-    };
 
-    let mut store = store.lock().await;
-    let entry_ref = store.entry(key.clone()).or_insert(store::Entry::new_list());
-    let length = match &mut entry_ref.value {
-        store::EntryValue::List(list) => {
-            list.extend(values.into_iter());
-            list.len()
-        }
-        _ => {
-            return resp::RespType::BulkError(format!("WRONGTYPE Entry at key {key} is not a list"))
-        }
-    };
+pub struct Rpush();
+impl Command for Rpush {
+    fn name(&self) -> String {
+        "RPUSH".into()
+    }
 
-    resp::RespType::Integer(length as i64)
+    /// Handles the RPUSH command.
+    async fn handle(
+        &self,
+        args: Vec<resp::RespType>,
+        store: &store::SharedStore,
+    ) -> resp::RespType {
+        let (key, values) = match parse_options(args) {
+            Ok(result) => result,
+            Err(err) => {
+                log::error!("{err}");
+                return resp::RespType::BulkError(format!("ERR {err} for 'RPUSH' command"));
+            }
+        };
+
+        let mut store = store.lock().await;
+        let entry_ref = store.entry(key.clone()).or_insert(store::Entry::new_list());
+        let length = match &mut entry_ref.value {
+            store::EntryValue::List(list) => {
+                list.extend(values.into_iter());
+                list.len()
+            }
+            _ => {
+                return resp::RespType::BulkError(format!(
+                    "WRONGTYPE Entry at key {key} is not a list"
+                ))
+            }
+        };
+
+        resp::RespType::Integer(length as i64)
+    }
 }
 
 #[cfg(test)]
@@ -54,6 +68,11 @@ mod test {
     #[fixture]
     fn store() -> crate::store::SharedStore {
         crate::store::new()
+    }
+
+    #[fixture]
+    fn rpush() -> Rpush {
+        Rpush()
     }
 
     #[fixture]
@@ -91,12 +110,13 @@ mod test {
     #[case::multiple(values())]
     #[tokio::test]
     async fn test_handle_not_existing(
+        rpush: Rpush,
         store: crate::store::SharedStore,
         key: String,
         #[case] values: Vec<String>,
     ) {
         let args = make_args(&key, &values);
-        let response = handle(args, &store).await;
+        let response = rpush.handle(args, &store).await;
         let expected_length = values.len();
         let expected = resp::RespType::Integer(expected_length as i64);
         assert_eq!(expected, response);
@@ -118,6 +138,7 @@ mod test {
     #[case::multiple(values())]
     #[tokio::test]
     async fn test_handle_existing(
+        rpush: Rpush,
         store: crate::store::SharedStore,
         key: String,
         #[case] values: Vec<String>,
@@ -135,7 +156,7 @@ mod test {
         let mut expected = existing_values;
         expected.extend(values);
 
-        let response = handle(args, &store).await;
+        let response = rpush.handle(args, &store).await;
         let expected_response = resp::RespType::Integer(expected.len() as i64);
         assert_eq!(expected_response, response);
 
@@ -153,44 +174,44 @@ mod test {
     // --- Errors ---
     #[rstest]
     #[tokio::test]
-    async fn text_missing_key(store: crate::store::SharedStore) {
+    async fn text_missing_key(rpush: Rpush, store: crate::store::SharedStore) {
         let args = vec![];
         let expected = resp::RespType::BulkError("ERR Missing key for 'RPUSH' command".into());
-        let response = handle(args, &store).await;
+        let response = rpush.handle(args, &store).await;
         assert_eq!(expected, response);
     }
 
     #[rstest]
     #[tokio::test]
-    async fn text_invalid_key(store: crate::store::SharedStore) {
+    async fn text_invalid_key(rpush: Rpush, store: crate::store::SharedStore) {
         let args = vec![resp::RespType::Array(vec![])];
         let expected =
             resp::RespType::BulkError("ERR Failed to extract key for 'RPUSH' command".into());
-        let response = handle(args, &store).await;
+        let response = rpush.handle(args, &store).await;
         assert_eq!(expected, response);
     }
 
     #[rstest]
     #[tokio::test]
-    async fn text_missing_value(store: crate::store::SharedStore, key: String) {
+    async fn text_missing_value(rpush: Rpush, store: crate::store::SharedStore, key: String) {
         let args = vec![resp::RespType::SimpleString(key)];
         let expected = resp::RespType::BulkError(
             "ERR At least one value must be provided for 'RPUSH' command".into(),
         );
-        let response = handle(args, &store).await;
+        let response = rpush.handle(args, &store).await;
         assert_eq!(expected, response);
     }
 
     #[rstest]
     #[tokio::test]
-    async fn test_invalid_value(store: crate::store::SharedStore, key: String) {
+    async fn test_invalid_value(rpush: Rpush, store: crate::store::SharedStore, key: String) {
         let args = vec![
             resp::RespType::SimpleString(key),
             resp::RespType::Array(vec![]),
         ];
         let expected =
             resp::RespType::BulkError("ERR Failed to extract value for 'RPUSH' command".into());
-        let response = handle(args, &store).await;
+        let response = rpush.handle(args, &store).await;
         assert_eq!(expected, response);
     }
 
@@ -199,6 +220,7 @@ mod test {
     #[case::multiple(values())]
     #[tokio::test]
     async fn test_existing_invalid_value_type(
+        rpush: Rpush,
         store: crate::store::SharedStore,
         key: String,
         #[case] values: Vec<String>,
@@ -211,7 +233,7 @@ mod test {
         let args = make_args(&key, &values);
         let expected =
             resp::RespType::BulkError(format!("WRONGTYPE Entry at key {key} is not a list"));
-        let response = handle(args, &store).await;
+        let response = rpush.handle(args, &store).await;
         assert_eq!(expected, response);
     }
 }
