@@ -1,3 +1,4 @@
+//! This module contains the basis of commands.
 pub mod echo;
 pub mod get;
 pub mod ping;

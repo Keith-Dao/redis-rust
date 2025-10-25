@@ -1,7 +1,7 @@
 //! This module contains the PING command.
 use crate::{commands::Command, resp, store};
 
-pub struct Ping();
+pub struct Ping;
 
 #[async_trait::async_trait]
 impl Command for Ping {
@@ -29,11 +29,6 @@ mod test {
         crate::store::new()
     }
 
-    #[fixture]
-    fn ping() -> Ping {
-        Ping()
-    }
-
     // --- Tests ---
     #[rstest]
     fn test_static_name() {
@@ -41,16 +36,16 @@ mod test {
     }
 
     #[rstest]
-    fn test_name(ping: Ping) {
-        assert_eq!("PING", ping.name());
+    fn test_name() {
+        assert_eq!("PING", Ping.name());
     }
 
     #[rstest]
     #[tokio::test]
-    async fn test_handle(ping: Ping, store: crate::store::SharedStore) {
+    async fn test_handle(store: crate::store::SharedStore) {
         assert_eq!(
             resp::RespType::SimpleString("PONG".into()),
-            ping.handle(vec![], &store).await
+            Ping.handle(vec![], &store).await
         );
     }
 }

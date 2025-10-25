@@ -10,7 +10,7 @@ fn parse_get_options<I: IntoIterator<Item = resp::RespType>>(iter: I) -> Result<
     Ok(key)
 }
 
-pub struct Get();
+pub struct Get;
 
 #[async_trait::async_trait]
 impl Command for Get {
@@ -63,11 +63,6 @@ mod tests {
     }
 
     #[fixture]
-    fn get() -> Get {
-        Get()
-    }
-
-    #[fixture]
     fn key() -> String {
         "key".into()
     }
@@ -84,44 +79,34 @@ mod tests {
     }
 
     #[rstest]
-    fn test_name(get: Get) {
-        assert_eq!("GET", get.name());
+    fn test_name() {
+        assert_eq!("GET", Get.name());
     }
 
     #[rstest]
     #[tokio::test]
-    async fn test_handle_existing(
-        get: Get,
-        store: crate::store::SharedStore,
-        key: String,
-        value: String,
-    ) {
+    async fn test_handle_existing(store: crate::store::SharedStore, key: String, value: String) {
         store
             .lock()
             .await
             .insert(key.clone(), crate::store::Entry::new_string(value.clone()));
 
         let args = vec![resp::RespType::SimpleString(key)];
-        let response = get.handle(args, &store).await;
+        let response = Get.handle(args, &store).await;
         assert_eq!(resp::RespType::BulkString(Some(value)), response);
     }
 
     #[rstest]
     #[tokio::test]
-    async fn test_handle_non_existing(get: Get, store: crate::store::SharedStore, key: String) {
+    async fn test_handle_non_existing(store: crate::store::SharedStore, key: String) {
         let args = vec![resp::RespType::SimpleString(key)];
-        let response = get.handle(args, &store).await;
+        let response = Get.handle(args, &store).await;
         assert_eq!(resp::RespType::Null(), response);
     }
 
     #[rstest]
     #[tokio::test]
-    async fn test_handle_expired_key(
-        get: Get,
-        store: crate::store::SharedStore,
-        key: String,
-        value: String,
-    ) {
+    async fn test_handle_expired_key(store: crate::store::SharedStore, key: String, value: String) {
         let deletion_time = 0u32;
         store.lock().await.insert(
             key.clone(),
@@ -129,7 +114,7 @@ mod tests {
         );
 
         let args = vec![resp::RespType::SimpleString(key.clone())];
-        let response = get.handle(args, &store).await;
+        let response = Get.handle(args, &store).await;
         assert_eq!(resp::RespType::Null(), response);
 
         assert!(store.lock().await.get(&key).is_none());
@@ -137,12 +122,7 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn test_handle_expiry(
-        get: Get,
-        store: crate::store::SharedStore,
-        key: String,
-        value: String,
-    ) {
+    async fn test_handle_expiry(store: crate::store::SharedStore, key: String, value: String) {
         tokio::time::pause();
         let deletion_time = 300;
         store.lock().await.insert(
@@ -151,48 +131,44 @@ mod tests {
         );
 
         let args = vec![resp::RespType::SimpleString(key)];
-        let response = get.handle(args.clone(), &store).await;
+        let response = Get.handle(args.clone(), &store).await;
         assert_eq!(resp::RespType::BulkString(Some(value)), response);
 
         tokio::time::advance(tokio::time::Duration::from_millis(deletion_time)).await;
-        let response = get.handle(args, &store).await;
+        let response = Get.handle(args, &store).await;
         assert_eq!(resp::RespType::Null(), response);
         assert!(store.lock().await.get("expiredkey").is_none());
     }
 
     #[rstest]
     #[tokio::test]
-    async fn test_handle_missing_key(get: Get, store: crate::store::SharedStore) {
+    async fn test_handle_missing_key(store: crate::store::SharedStore) {
         let args = vec![];
         let expected = resp::RespType::BulkError("ERR Missing key for 'GET' command".into());
-        let response = get.handle(args.clone(), &store).await;
+        let response = Get.handle(args.clone(), &store).await;
         assert_eq!(expected, response);
     }
 
     #[rstest]
     #[tokio::test]
-    async fn test_handle_invalid_key_type(get: Get, store: crate::store::SharedStore) {
+    async fn test_handle_invalid_key_type(store: crate::store::SharedStore) {
         let args = vec![resp::RespType::Array(vec![])];
         let expected =
             resp::RespType::BulkError("ERR Failed to extract key for 'GET' command".into());
-        let response = get.handle(args.clone(), &store).await;
+        let response = Get.handle(args.clone(), &store).await;
         assert_eq!(expected, response);
     }
 
     #[rstest]
     #[tokio::test]
-    async fn test_handle_invalid_store_type(
-        get: Get,
-        store: crate::store::SharedStore,
-        key: String,
-    ) {
+    async fn test_handle_invalid_store_type(store: crate::store::SharedStore, key: String) {
         store
             .lock()
             .await
             .insert(key.clone(), crate::store::Entry::new_list());
         let args = vec![resp::RespType::BulkString(Some(key.clone()))];
         let expected = resp::RespType::BulkError("WRONGTYPE stored type is not a string".into());
-        let response = get.handle(args, &store).await;
+        let response = Get.handle(args, &store).await;
         assert_eq!(expected, response);
     }
 }

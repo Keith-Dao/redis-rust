@@ -7,11 +7,11 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 async fn get_response(message: resp::RespType, store: &store::SharedStore) -> resp::RespType {
     let (command, args) = resp::extract_command(message).unwrap();
     match command.to_lowercase().as_str() {
-        "ping" => commands::ping::Ping().handle(args, &store).await,
-        "echo" => commands::echo::Echo().handle(args, &store).await,
-        "set" => commands::set::Set().handle(args, &store).await,
-        "get" => commands::get::Get().handle(args, &store).await,
-        "rpush" => commands::rpush::Rpush().handle(args, &store).await,
+        "ping" => commands::ping::Ping.handle(args, &store).await,
+        "echo" => commands::echo::Echo.handle(args, &store).await,
+        "set" => commands::set::Set.handle(args, &store).await,
+        "get" => commands::get::Get.handle(args, &store).await,
+        "rpush" => commands::rpush::Rpush.handle(args, &store).await,
         _ => resp::RespType::SimpleError(format!("ERR Command ({command}) is not valid")),
     }
 }
@@ -102,7 +102,7 @@ mod tests {
     #[tokio::test]
     async fn test_get_response_ping(store: crate::store::SharedStore, #[case] command: String) {
         let message = resp::RespType::Array(vec![resp::RespType::SimpleString(command)]);
-        let expected = commands::ping::Ping().handle(vec![], &store).await;
+        let expected = commands::ping::Ping.handle(vec![], &store).await;
         let response = get_response(message, &store).await;
         assert_eq!(expected, response);
     }
@@ -121,7 +121,7 @@ mod tests {
             resp::RespType::SimpleString(command),
             resp::RespType::SimpleString(value),
         ];
-        let expected = commands::echo::Echo()
+        let expected = commands::echo::Echo
             .handle(make_handle_args(&args), &store)
             .await;
 
@@ -149,7 +149,7 @@ mod tests {
             resp::RespType::SimpleString(command),
             resp::RespType::SimpleString(key.clone()),
         ];
-        let expected = commands::get::Get()
+        let expected = commands::get::Get
             .handle(make_handle_args(&args), &store)
             .await;
 
@@ -175,7 +175,7 @@ mod tests {
             resp::RespType::SimpleString(key.clone()),
             resp::RespType::SimpleString(value.clone()),
         ];
-        let expected = commands::set::Set()
+        let expected = commands::set::Set
             .handle(make_handle_args(&args), &expected_store)
             .await;
 
@@ -202,7 +202,7 @@ mod tests {
             resp::RespType::SimpleString(key.clone()),
             resp::RespType::SimpleString(value.clone()),
         ];
-        let expected = commands::rpush::Rpush()
+        let expected = commands::rpush::Rpush
             .handle(make_handle_args(&args), &expected_store)
             .await;
 
