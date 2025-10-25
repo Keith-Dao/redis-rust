@@ -23,8 +23,12 @@ fn parse_options<I: IntoIterator<Item = resp::RespType>>(iter: I) -> Result<(Str
 
 pub struct Rpush();
 impl Command for Rpush {
-    fn name(&self) -> String {
+    fn static_name() -> String {
         "RPUSH".into()
+    }
+
+    fn name(&self) -> String {
+        Self::static_name()
     }
 
     /// Handles the RPUSH command.

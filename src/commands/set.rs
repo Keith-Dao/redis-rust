@@ -40,8 +40,12 @@ fn parse_set_options<I: IntoIterator<Item = resp::RespType>>(
 
 pub struct Set();
 impl Command for Set {
-    fn name(&self) -> String {
+    fn static_name() -> String {
         "SET".into()
+    }
+
+    fn name(&self) -> String {
+        Self::static_name()
     }
 
     /// Handles the SET command.
@@ -90,6 +94,16 @@ mod tests {
     }
 
     // --- Tests ---
+    #[rstest]
+    fn test_static_name() {
+        assert_eq!("SET", Set::static_name());
+    }
+
+    #[rstest]
+    fn test_name(set: Set) {
+        assert_eq!("SET", set.name());
+    }
+
     #[rstest]
     #[tokio::test]
     async fn test_handle_basic(

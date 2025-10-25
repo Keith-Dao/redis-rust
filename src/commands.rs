@@ -6,6 +6,9 @@ pub mod set;
 
 /// The command trait.
 pub trait Command {
+    /// Gets the static name.
+    fn static_name() -> String;
+
     /// Gets the name of the comamnd.
     fn name(&self) -> String;
 

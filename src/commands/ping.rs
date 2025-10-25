@@ -4,8 +4,12 @@ use crate::{commands::Command, resp, store};
 pub struct Ping();
 
 impl Command for Ping {
-    fn name(&self) -> String {
+    fn static_name() -> String {
         "PING".into()
+    }
+
+    fn name(&self) -> String {
+        Self::static_name()
     }
 
     /// Handles the PING command.
@@ -30,6 +34,16 @@ mod test {
     }
 
     // --- Tests ---
+    #[rstest]
+    fn test_static_name() {
+        assert_eq!("PING", Ping::static_name());
+    }
+
+    #[rstest]
+    fn test_name(ping: Ping) {
+        assert_eq!("PING", ping.name());
+    }
+
     #[rstest]
     #[tokio::test]
     async fn test_handle(ping: Ping, store: crate::store::SharedStore) {

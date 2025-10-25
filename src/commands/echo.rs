@@ -4,8 +4,12 @@ use crate::{commands::Command, resp, store};
 pub struct Echo();
 
 impl Command for Echo {
-    fn name(&self) -> String {
+    fn static_name() -> String {
         "ECHO".into()
+    }
+
+    fn name(&self) -> String {
+        Self::static_name()
     }
 
     /// Handles the ECHO command.
@@ -39,6 +43,16 @@ mod test {
     }
 
     // --- Tests ---
+    #[rstest]
+    fn test_static_name() {
+        assert_eq!("ECHO", Echo::static_name());
+    }
+
+    #[rstest]
+    fn test_name(echo: Echo) {
+        assert_eq!("ECHO", echo.name());
+    }
+
     #[rstest]
     #[tokio::test]
     async fn test_simple_string(echo: Echo, store: crate::store::SharedStore) {

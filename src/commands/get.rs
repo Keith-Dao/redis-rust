@@ -13,8 +13,12 @@ fn parse_get_options<I: IntoIterator<Item = resp::RespType>>(iter: I) -> Result<
 pub struct Get();
 
 impl Command for Get {
-    fn name(&self) -> String {
+    fn static_name() -> String {
         "GET".into()
+    }
+
+    fn name(&self) -> String {
+        Self::static_name()
     }
 
     /// Handles the GET command.
@@ -73,6 +77,16 @@ mod tests {
     }
 
     // --- Tests ---
+    #[rstest]
+    fn test_static_name() {
+        assert_eq!("GET", Get::static_name());
+    }
+
+    #[rstest]
+    fn test_name(get: Get) {
+        assert_eq!("GET", get.name());
+    }
+
     #[rstest]
     #[tokio::test]
     async fn test_handle_existing(
