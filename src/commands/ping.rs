@@ -3,6 +3,7 @@ use crate::{commands::Command, resp, store};
 
 pub struct Ping();
 
+#[async_trait::async_trait]
 impl Command for Ping {
     fn static_name() -> String {
         "PING".into()

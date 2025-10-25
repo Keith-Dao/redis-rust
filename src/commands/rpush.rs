@@ -22,6 +22,8 @@ fn parse_options<I: IntoIterator<Item = resp::RespType>>(iter: I) -> Result<(Str
 }
 
 pub struct Rpush();
+
+#[async_trait::async_trait]
 impl Command for Rpush {
     fn static_name() -> String {
         "RPUSH".into()

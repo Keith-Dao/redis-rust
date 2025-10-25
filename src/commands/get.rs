@@ -12,6 +12,7 @@ fn parse_get_options<I: IntoIterator<Item = resp::RespType>>(iter: I) -> Result<
 
 pub struct Get();
 
+#[async_trait::async_trait]
 impl Command for Get {
     fn static_name() -> String {
         "GET".into()

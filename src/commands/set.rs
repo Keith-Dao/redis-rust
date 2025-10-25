@@ -39,6 +39,8 @@ fn parse_set_options<I: IntoIterator<Item = resp::RespType>>(
 }
 
 pub struct Set();
+
+#[async_trait::async_trait]
 impl Command for Set {
     fn static_name() -> String {
         "SET".into()

@@ -3,6 +3,7 @@ use crate::{commands::Command, resp, store};
 
 pub struct Echo();
 
+#[async_trait::async_trait]
 impl Command for Echo {
     fn static_name() -> String {
         "ECHO".into()
