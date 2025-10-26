@@ -5,12 +5,8 @@ pub struct Ping;
 
 #[async_trait::async_trait]
 impl Command for Ping {
-    fn static_name() -> String {
-        "PING".into()
-    }
-
     fn name(&self) -> String {
-        Self::static_name()
+        "PING".into()
     }
 
     /// Handles the PING command.
@@ -30,11 +26,6 @@ mod test {
     }
 
     // --- Tests ---
-    #[rstest]
-    fn test_static_name() {
-        assert_eq!("PING", Ping::static_name());
-    }
-
     #[rstest]
     fn test_name() {
         assert_eq!("PING", Ping.name());

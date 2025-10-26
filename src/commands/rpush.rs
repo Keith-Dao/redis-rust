@@ -25,12 +25,8 @@ pub struct Rpush;
 
 #[async_trait::async_trait]
 impl Command for Rpush {
-    fn static_name() -> String {
-        "RPUSH".into()
-    }
-
     fn name(&self) -> String {
-        Self::static_name()
+        "RPUSH".into()
     }
 
     /// Handles the RPUSH command.

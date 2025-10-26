@@ -14,12 +14,8 @@ pub struct Get;
 
 #[async_trait::async_trait]
 impl Command for Get {
-    fn static_name() -> String {
-        "GET".into()
-    }
-
     fn name(&self) -> String {
-        Self::static_name()
+        "GET".into()
     }
 
     /// Handles the GET command.
@@ -73,11 +69,6 @@ mod tests {
     }
 
     // --- Tests ---
-    #[rstest]
-    fn test_static_name() {
-        assert_eq!("GET", Get::static_name());
-    }
-
     #[rstest]
     fn test_name() {
         assert_eq!("GET", Get.name());

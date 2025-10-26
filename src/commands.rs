@@ -8,11 +8,6 @@ pub mod set;
 #[async_trait::async_trait]
 /// The command trait.
 pub trait Command {
-    /// Gets the static name.
-    fn static_name() -> String
-    where
-        Self: Sized;
-
     /// Gets the name of the comamnd.
     fn name(&self) -> String;
 

@@ -42,12 +42,8 @@ pub struct Set;
 
 #[async_trait::async_trait]
 impl Command for Set {
-    fn static_name() -> String {
-        "SET".into()
-    }
-
     fn name(&self) -> String {
-        Self::static_name()
+        "SET".into()
     }
 
     /// Handles the SET command.
@@ -91,11 +87,6 @@ mod tests {
     }
 
     // --- Tests ---
-    #[rstest]
-    fn test_static_name() {
-        assert_eq!("SET", Set::static_name());
-    }
-
     #[rstest]
     fn test_name() {
         assert_eq!("SET", Set.name());

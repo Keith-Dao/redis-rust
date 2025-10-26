@@ -5,12 +5,8 @@ pub struct Echo;
 
 #[async_trait::async_trait]
 impl Command for Echo {
-    fn static_name() -> String {
-        "ECHO".into()
-    }
-
     fn name(&self) -> String {
-        Self::static_name()
+        "ECHO".into()
     }
 
     /// Handles the ECHO command.
@@ -39,11 +35,6 @@ mod test {
     }
 
     // --- Tests ---
-    #[rstest]
-    fn test_static_name() {
-        assert_eq!("ECHO", Echo::static_name());
-    }
-
     #[rstest]
     fn test_name() {
         assert_eq!("ECHO", Echo.name());
