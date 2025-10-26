@@ -103,6 +103,11 @@ mod test {
 
     // --- Tests ---
     #[rstest]
+    fn test_name() {
+        assert_eq!("RPUSH", Rpush.name());
+    }
+
+    #[rstest]
     #[case::single(value())]
     #[case::multiple(values())]
     #[tokio::test]
