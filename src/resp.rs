@@ -46,7 +46,7 @@ fn parse_num(buffer: BytesMut) -> Result<i64> {
         .context("Failed to parse the number.")
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 /// Represents a RESP (Redis Serialization Protocol) data type.
 pub enum RespType {
     SimpleString(String),
@@ -55,6 +55,7 @@ pub enum RespType {
     Array(Vec<RespType>),
     BulkError(String),
     Integer(i64),
+    Map(Vec<(RespType, RespType)>),
     Null(),
 }
 
@@ -146,6 +147,33 @@ impl RespType {
         Ok(RespType::Integer(number))
     }
 
+    /// Parses a buffer for a map.
+    fn parse_map(buffer: &mut BytesMut) -> Result<RespType> {
+        trace!("Parsing map: {:?}", buffer);
+        let map_length = parse_num(
+            read_until_crlf(buffer)
+                .context(format!("Map missing length segment: {:?}.", buffer))?,
+        )
+        .context("Failed to parse map length.")?;
+
+        let mut messages = vec![];
+        for _ in 0..map_length {
+            let key = RespType::from_bytes(buffer).context(format!(
+                "Message did not match expected length. Expected: {}, got: {}.",
+                map_length,
+                messages.len()
+            ))?;
+            let value = RespType::from_bytes(buffer).context(format!(
+                "Message did not match expected length. Expected: {}, got: {}.",
+                map_length,
+                messages.len()
+            ))?;
+            messages.push((key, value));
+        }
+
+        Ok(RespType::Map(messages))
+    }
+
     /// Parses a buffer for an array.
     fn parse_array(buffer: &mut BytesMut) -> Result<RespType> {
         trace!("Parsing array: {:?}", buffer);
@@ -190,6 +218,7 @@ impl RespType {
                 '$' => Self::parse_bulk_string(buffer),
                 '!' => Self::parse_bulk_error(buffer),
                 ':' => Self::parse_integer(buffer),
+                '%' => Self::parse_map(buffer),
                 '*' => Self::parse_array(buffer),
                 '_' => Self::parse_null(buffer),
                 _ => Err(anyhow::anyhow!("Invalid message type.")),
@@ -218,6 +247,16 @@ impl RespType {
             }
             Self::BulkError(s) => format!("!{}\r\n{s}\r\n", s.len()),
             Self::Integer(num) => format!(":{num}\r\n"),
+            Self::Map(map) => {
+                format!(
+                    "%{}\r\n{}",
+                    map.len(),
+                    map.iter()
+                        .map(|(key, value)| format!("{}{}", key.serialize(), value.serialize()))
+                        .collect::<Vec<String>>()
+                        .join("")
+                )
+            }
             Self::Null() => "_\r\n".into(),
         }
     }
@@ -467,6 +506,21 @@ mod tests {
     #[case::integer_missing(b":\r\n", Err(anyhow::anyhow!("Failed to parse number.")))]
     #[case::integer_invalid_symbol(b":=120\r\n", Err(anyhow::anyhow!("Failed to parse number.")))]
     #[case::integer_invalid_number(b":abc\r\n", Err(anyhow::anyhow!("Failed to parse number.")))]
+    // Maps
+    #[case::map_empty(b"%0\r\n", Ok(RespType::Map(vec![])))]
+    #[case::map_single(b"%1\r\n+Key\r\n+Value\r\n", Ok(RespType::Map(vec![(RespType::SimpleString("Key".into()), RespType::SimpleString("Value".into()))])))]
+    #[case::map_nested(
+        b"%1\r\n+Key\r\n%1\r\n+Inner\r\n-Error\r\n",
+        Ok(RespType::Map(
+            vec![
+                (
+                    RespType::SimpleString("Key".into()),
+                    RespType::Map(vec![(RespType::SimpleString("Inner".into()), RespType::SimpleError("Error".to_string()))])
+                )
+        ]))
+    )]
+    #[case::map_too_short(b"%1\r\n", Err(anyhow::anyhow!("Message did not match expected length. Expected: 1, got: 0.")))]
+    #[case::map_missing_length_segment(b"%2", Err(anyhow::anyhow!("Map missing length segment: b\"2\".")))]
     // Arrays
     #[case::array(
         b"*3\r\n+Test\r\n$4\r\nTest\r\n$7\r\nAnother\r\n",
@@ -527,6 +581,19 @@ mod tests {
     #[case::integer_zero(RespType::Integer(0), ":0\r\n")]
     #[case::integer_positive(RespType::Integer(123), ":123\r\n")]
     #[case::integer_negative(RespType::Integer(-123), ":-123\r\n")]
+    // Maps
+    #[case::map_empty(RespType::Map(vec![]), "%0\r\n")]
+    #[case::map_single(RespType::Map(vec![(RespType::SimpleString("Key".into()), RespType::SimpleString("Value".into()))]), "%1\r\n+Key\r\n+Value\r\n")]
+    #[case::map_nested(
+        RespType::Map(
+            vec![
+                (
+                    RespType::SimpleString("Key".into()),
+                    RespType::Map(vec![(RespType::SimpleString("Inner".into()), RespType::SimpleError("Error".to_string()))])
+                )
+        ])
+        , "%1\r\n+Key\r\n%1\r\n+Inner\r\n-Error\r\n")
+    ]
     // Arrays
     #[case::array_empty(RespType::Array(vec![]), "*0\r\n")]
     #[case::array_one_element(RespType::Array(vec![RespType::SimpleString("Test".into())]), "*1\r\n+Test\r\n")]
