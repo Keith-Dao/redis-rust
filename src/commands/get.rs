@@ -1,5 +1,5 @@
 //! This module contains the GET command.
-use crate::{resp, store};
+use crate::{commands::Command, resp, store};
 use anyhow::{Context, Result};
 
 /// Parses the GET options.
@@ -10,27 +10,40 @@ fn parse_get_options<I: IntoIterator<Item = resp::RespType>>(iter: I) -> Result<
     Ok(key)
 }
 
-/// Handles the GET command.
-pub async fn handle(args: Vec<resp::RespType>, store: &store::SharedStore) -> resp::RespType {
-    let key = match parse_get_options(args.into_iter()) {
-        Ok(result) => result,
-        Err(err) => {
-            log::error!("{err}");
-            return resp::RespType::BulkError(format!("ERR {err} for 'GET' command"));
-        }
-    };
+pub struct Get;
 
-    let mut store = store.lock().await;
-    let missing_value = resp::RespType::Null();
-    match store.get(&key) {
-        Some(store::Entry {
-            value,
-            deletion_time: _,
-        }) => match value {
-            store::EntryValue::String(value) => resp::RespType::BulkString(Some(value.clone())),
-            _ => resp::RespType::BulkError("WRONGTYPE stored type is not a string".into()),
-        },
-        _ => missing_value,
+#[async_trait::async_trait]
+impl Command for Get {
+    fn name(&self) -> String {
+        "GET".into()
+    }
+
+    /// Handles the GET command.
+    async fn handle(
+        &self,
+        args: Vec<resp::RespType>,
+        store: &store::SharedStore,
+    ) -> resp::RespType {
+        let key = match parse_get_options(args.into_iter()) {
+            Ok(result) => result,
+            Err(err) => {
+                log::error!("{err}");
+                return resp::RespType::BulkError(format!("ERR {err} for 'GET' command"));
+            }
+        };
+
+        let mut store = store.lock().await;
+        let missing_value = resp::RespType::Null();
+        match store.get(&key) {
+            Some(store::Entry {
+                value,
+                deletion_time: _,
+            }) => match value {
+                store::EntryValue::String(value) => resp::RespType::BulkString(Some(value.clone())),
+                _ => resp::RespType::BulkError("WRONGTYPE stored type is not a string".into()),
+            },
+            _ => missing_value,
+        }
     }
 }
 
@@ -57,6 +70,11 @@ mod tests {
 
     // --- Tests ---
     #[rstest]
+    fn test_name() {
+        assert_eq!("GET", Get.name());
+    }
+
+    #[rstest]
     #[tokio::test]
     async fn test_handle_existing(store: crate::store::SharedStore, key: String, value: String) {
         store
@@ -65,7 +83,7 @@ mod tests {
             .insert(key.clone(), crate::store::Entry::new_string(value.clone()));
 
         let args = vec![resp::RespType::SimpleString(key)];
-        let response = handle(args, &store).await;
+        let response = Get.handle(args, &store).await;
         assert_eq!(resp::RespType::BulkString(Some(value)), response);
     }
 
@@ -73,7 +91,7 @@ mod tests {
     #[tokio::test]
     async fn test_handle_non_existing(store: crate::store::SharedStore, key: String) {
         let args = vec![resp::RespType::SimpleString(key)];
-        let response = handle(args, &store).await;
+        let response = Get.handle(args, &store).await;
         assert_eq!(resp::RespType::Null(), response);
     }
 
@@ -87,7 +105,7 @@ mod tests {
         );
 
         let args = vec![resp::RespType::SimpleString(key.clone())];
-        let response = handle(args, &store).await;
+        let response = Get.handle(args, &store).await;
         assert_eq!(resp::RespType::Null(), response);
 
         assert!(store.lock().await.get(&key).is_none());
@@ -104,11 +122,11 @@ mod tests {
         );
 
         let args = vec![resp::RespType::SimpleString(key)];
-        let response = handle(args.clone(), &store).await;
+        let response = Get.handle(args.clone(), &store).await;
         assert_eq!(resp::RespType::BulkString(Some(value)), response);
 
         tokio::time::advance(tokio::time::Duration::from_millis(deletion_time)).await;
-        let response = handle(args, &store).await;
+        let response = Get.handle(args, &store).await;
         assert_eq!(resp::RespType::Null(), response);
         assert!(store.lock().await.get("expiredkey").is_none());
     }
@@ -118,7 +136,7 @@ mod tests {
     async fn test_handle_missing_key(store: crate::store::SharedStore) {
         let args = vec![];
         let expected = resp::RespType::BulkError("ERR Missing key for 'GET' command".into());
-        let response = handle(args.clone(), &store).await;
+        let response = Get.handle(args.clone(), &store).await;
         assert_eq!(expected, response);
     }
 
@@ -128,7 +146,7 @@ mod tests {
         let args = vec![resp::RespType::Array(vec![])];
         let expected =
             resp::RespType::BulkError("ERR Failed to extract key for 'GET' command".into());
-        let response = handle(args.clone(), &store).await;
+        let response = Get.handle(args.clone(), &store).await;
         assert_eq!(expected, response);
     }
 
@@ -141,7 +159,7 @@ mod tests {
             .insert(key.clone(), crate::store::Entry::new_list());
         let args = vec![resp::RespType::BulkString(Some(key.clone()))];
         let expected = resp::RespType::BulkError("WRONGTYPE stored type is not a string".into());
-        let response = handle(args, &store).await;
+        let response = Get.handle(args, &store).await;
         assert_eq!(expected, response);
     }
 }

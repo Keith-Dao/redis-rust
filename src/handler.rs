@@ -4,16 +4,13 @@ use anyhow::Result;
 use bytes::BytesMut;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
-async fn get_response(message: resp::RespType, store: &store::SharedStore) -> resp::RespType {
+async fn get_response(
+    message: resp::RespType,
+    store: &store::SharedStore,
+    register: &commands::SharedRegister,
+) -> resp::RespType {
     let (command, args) = resp::extract_command(message).unwrap();
-    match command.to_lowercase().as_str() {
-        "ping" => commands::ping::handle(),
-        "echo" => commands::echo::handle(args),
-        "set" => commands::set::handle(args, &store).await,
-        "get" => commands::get::handle(args, &store).await,
-        "rpush" => commands::rpush::handle(args, &store).await,
-        _ => resp::RespType::SimpleError(format!("ERR Command ({command}) is not valid")),
-    }
+    register.read().await.handle(command, args, store).await
 }
 
 /// Handles reading and writing RESP messages over a TCP stream.
@@ -51,9 +48,9 @@ where
     }
 
     /// Runs the handler.
-    pub async fn run(&mut self, store: store::SharedStore) {
+    pub async fn run(&mut self, store: store::SharedStore, register: commands::SharedRegister) {
         while let Ok(Some(message)) = self.read_stream().await {
-            let response = get_response(message, &store).await;
+            let response = get_response(message, &store, &register).await;
             self.write_stream(response).await.unwrap();
         }
     }
@@ -62,12 +59,18 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::commands::Command;
     use rstest::{fixture, rstest};
 
     // --- Fixtures ---
     #[fixture]
     fn store() -> crate::store::SharedStore {
         crate::store::new()
+    }
+
+    #[fixture]
+    fn register() -> crate::commands::SharedRegister {
+        std::sync::Arc::new(tokio::sync::RwLock::new(crate::commands::Register::new()))
     }
 
     #[fixture]
@@ -100,10 +103,19 @@ mod tests {
     #[case::upper("PING")]
     #[case::mixed("PinG")]
     #[tokio::test]
-    async fn test_get_response_ping(store: crate::store::SharedStore, #[case] command: String) {
+    async fn test_get_response_ping(
+        store: crate::store::SharedStore,
+        register: crate::commands::SharedRegister,
+        #[case] command: String,
+    ) {
+        register
+            .write()
+            .await
+            .register(Box::new(crate::commands::ping::Ping));
+
         let message = resp::RespType::Array(vec![resp::RespType::SimpleString(command)]);
-        let expected = commands::ping::handle();
-        let response = get_response(message, &store).await;
+        let expected = crate::commands::ping::Ping.handle(vec![], &store).await;
+        let response = get_response(message, &store, &register).await;
         assert_eq!(expected, response);
     }
 
@@ -114,17 +126,24 @@ mod tests {
     #[tokio::test]
     async fn test_get_response_echo(
         store: crate::store::SharedStore,
+        register: crate::commands::SharedRegister,
         #[case] command: String,
         value: String,
     ) {
+        register
+            .write()
+            .await
+            .register(Box::new(crate::commands::echo::Echo));
         let args = vec![
             resp::RespType::SimpleString(command),
             resp::RespType::SimpleString(value),
         ];
-        let expected = commands::echo::handle(make_handle_args(&args));
+        let expected = crate::commands::echo::Echo
+            .handle(make_handle_args(&args), &store)
+            .await;
 
         let message = resp::RespType::Array(args);
-        let response = get_response(message, &store).await;
+        let response = get_response(message, &store, &register).await;
         assert_eq!(expected, response);
     }
 
@@ -135,10 +154,15 @@ mod tests {
     #[tokio::test]
     async fn test_get_response_get(
         store: crate::store::SharedStore,
+        register: crate::commands::SharedRegister,
         #[case] command: String,
         key: String,
         value: String,
     ) {
+        register
+            .write()
+            .await
+            .register(Box::new(crate::commands::get::Get));
         store
             .lock()
             .await
@@ -147,10 +171,12 @@ mod tests {
             resp::RespType::SimpleString(command),
             resp::RespType::SimpleString(key.clone()),
         ];
-        let expected = commands::get::handle(make_handle_args(&args), &store).await;
+        let expected = crate::commands::get::Get
+            .handle(make_handle_args(&args), &store)
+            .await;
 
         let get_message = resp::RespType::Array(args);
-        let response = get_response(get_message, &store).await;
+        let response = get_response(get_message, &store, &register).await;
         assert_eq!(expected, response);
     }
 
@@ -161,20 +187,27 @@ mod tests {
     #[tokio::test]
     async fn test_get_response_set(
         store: crate::store::SharedStore,
+        register: crate::commands::SharedRegister,
         #[case] command: String,
         key: String,
         value: String,
     ) {
+        register
+            .write()
+            .await
+            .register(Box::new(crate::commands::set::Set));
         let expected_store = crate::store::new();
         let args = vec![
             resp::RespType::SimpleString(command),
             resp::RespType::SimpleString(key.clone()),
             resp::RespType::SimpleString(value.clone()),
         ];
-        let expected = commands::set::handle(make_handle_args(&args), &expected_store).await;
+        let expected = crate::commands::set::Set
+            .handle(make_handle_args(&args), &expected_store)
+            .await;
 
         let set_message = resp::RespType::Array(args);
-        let response = get_response(set_message, &store).await;
+        let response = get_response(set_message, &store, &register).await;
         assert_eq!(expected, response);
         assert_eq!(*expected_store.lock().await, *store.lock().await);
     }
@@ -186,29 +219,39 @@ mod tests {
     #[tokio::test]
     async fn test_get_response_rpush(
         store: crate::store::SharedStore,
+        register: crate::commands::SharedRegister,
         #[case] command: String,
         key: String,
         value: String,
     ) {
+        register
+            .write()
+            .await
+            .register(Box::new(crate::commands::rpush::Rpush));
         let expected_store = crate::store::new();
         let args = vec![
             resp::RespType::SimpleString(command),
             resp::RespType::SimpleString(key.clone()),
             resp::RespType::SimpleString(value.clone()),
         ];
-        let expected = commands::rpush::handle(make_handle_args(&args), &expected_store).await;
+        let expected = crate::commands::rpush::Rpush
+            .handle(make_handle_args(&args), &expected_store)
+            .await;
 
         let set_message = resp::RespType::Array(args);
-        let response = get_response(set_message, &store).await;
+        let response = get_response(set_message, &store, &register).await;
         assert_eq!(expected, response);
         assert_eq!(*expected_store.lock().await, *store.lock().await);
     }
 
     #[rstest]
     #[tokio::test]
-    async fn test_invalid_command(store: crate::store::SharedStore) {
+    async fn test_invalid_command(
+        store: crate::store::SharedStore,
+        register: crate::commands::SharedRegister,
+    ) {
         let message = resp::RespType::Array(vec![resp::RespType::SimpleString("Invalid".into())]);
-        let response = get_response(message, &store).await;
+        let response = get_response(message, &store, &register).await;
         let expected = resp::RespType::SimpleError("ERR Command (Invalid) is not valid".into());
         assert_eq!(expected, response);
     }
@@ -294,7 +337,12 @@ mod tests {
             RespHandler<tokio::io::DuplexStream>,
         ),
         store: crate::store::SharedStore,
+        register: crate::commands::SharedRegister,
     ) -> Result<()> {
+        register
+            .write()
+            .await
+            .register(Box::new(crate::commands::ping::Ping));
         let (mut client_stream, mut handler) = stream_and_handler;
 
         let message = resp::RespType::Array(vec![resp::RespType::SimpleString("PING".into())]);
@@ -303,7 +351,7 @@ mod tests {
             .await?;
         client_stream.shutdown().await?;
 
-        handler.run(store).await;
+        handler.run(store, register).await;
 
         let mut buffer = BytesMut::with_capacity(512);
         client_stream.read_buf(&mut buffer).await?;

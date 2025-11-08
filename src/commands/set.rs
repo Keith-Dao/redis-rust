@@ -1,5 +1,5 @@
 //! This module contains the SET command.
-use crate::{resp, store};
+use crate::{commands::Command, resp, store};
 use anyhow::{Context, Result};
 
 /// Parses the SET options.
@@ -37,18 +37,32 @@ fn parse_set_options<I: IntoIterator<Item = resp::RespType>>(
 
     Ok((key, entry))
 }
-/// Handles the SET command.
-pub async fn handle(args: Vec<resp::RespType>, store: &store::SharedStore) -> resp::RespType {
-    let (key, entry) = match parse_set_options(args) {
-        Ok(result) => result,
-        Err(err) => {
-            log::error!("{err}");
-            return resp::RespType::BulkError(format!("ERR {err} for 'SET' command"));
-        }
-    };
 
-    store.lock().await.insert(key, entry);
-    resp::RespType::SimpleString("OK".into())
+pub struct Set;
+
+#[async_trait::async_trait]
+impl Command for Set {
+    fn name(&self) -> String {
+        "SET".into()
+    }
+
+    /// Handles the SET command.
+    async fn handle(
+        &self,
+        args: Vec<crate::resp::RespType>,
+        store: &crate::store::SharedStore,
+    ) -> resp::RespType {
+        let (key, entry) = match parse_set_options(args) {
+            Ok(result) => result,
+            Err(err) => {
+                log::error!("{err}");
+                return resp::RespType::BulkError(format!("ERR {err} for 'SET' command"));
+            }
+        };
+
+        store.lock().await.insert(key, entry);
+        resp::RespType::SimpleString("OK".into())
+    }
 }
 
 #[cfg(test)]
@@ -74,13 +88,18 @@ mod tests {
 
     // --- Tests ---
     #[rstest]
+    fn test_name() {
+        assert_eq!("SET", Set.name());
+    }
+
+    #[rstest]
     #[tokio::test]
     async fn test_handle_basic(store: crate::store::SharedStore, key: String, value: String) {
         let args = vec![
             resp::RespType::SimpleString(key.clone()),
             resp::RespType::SimpleString(value.clone()),
         ];
-        let response = handle(args, &store).await;
+        let response = Set.handle(args, &store).await;
         assert_eq!(response, resp::RespType::SimpleString("OK".into()));
 
         let mut store = store.lock().await;
@@ -107,7 +126,7 @@ mod tests {
             resp::RespType::SimpleString(px),
             resp::RespType::SimpleString(duration.to_string()), // 100 milliseconds
         ];
-        let response = handle(args, &store).await;
+        let response = Set.handle(args, &store).await;
         assert_eq!(response, resp::RespType::SimpleString("OK".into()));
 
         let mut store = store.lock().await;
@@ -133,7 +152,7 @@ mod tests {
             resp::RespType::SimpleString(key.clone()),
             resp::RespType::SimpleString(value.clone()),
         ];
-        let response = handle(args, &store).await;
+        let response = Set.handle(args, &store).await;
         assert_eq!(response, resp::RespType::SimpleString("OK".into()));
 
         let mut store = store.lock().await;
@@ -147,7 +166,7 @@ mod tests {
     #[tokio::test]
     async fn test_handle_missing_key(store: crate::store::SharedStore) {
         let args = vec![];
-        let response = handle(args, &store).await;
+        let response = Set.handle(args, &store).await;
         assert_eq!(
             resp::RespType::BulkError("ERR Missing key for 'SET' command".into()),
             response
@@ -158,7 +177,7 @@ mod tests {
     #[tokio::test]
     async fn test_handle_invalid_key(store: crate::store::SharedStore) {
         let args = vec![resp::RespType::Array(vec![])];
-        let response = handle(args, &store).await;
+        let response = Set.handle(args, &store).await;
         assert_eq!(
             resp::RespType::BulkError("ERR Failed to extract key for 'SET' command".into()),
             response
@@ -169,7 +188,7 @@ mod tests {
     #[tokio::test]
     async fn test_handle_missing_value(store: crate::store::SharedStore, key: String) {
         let args = vec![resp::RespType::BulkString(Some(key))];
-        let response = handle(args, &store).await;
+        let response = Set.handle(args, &store).await;
         assert_eq!(
             resp::RespType::BulkError("ERR Missing value for 'SET' command".into()),
             response
@@ -183,7 +202,7 @@ mod tests {
             resp::RespType::BulkString(Some(key)),
             resp::RespType::Array(vec![]),
         ];
-        let response = handle(args, &store).await;
+        let response = Set.handle(args, &store).await;
         assert_eq!(
             resp::RespType::BulkError("ERR Failed to extract value for 'SET' command".into()),
             response
@@ -202,7 +221,7 @@ mod tests {
             resp::RespType::BulkString(Some(value)),
             resp::RespType::BulkString(Some("invalid option".into())),
         ];
-        let response = handle(args, &store).await;
+        let response = Set.handle(args, &store).await;
         assert_eq!(
             resp::RespType::BulkError(
                 "ERR invalid option is not a valid option for 'SET' command".into()
@@ -223,7 +242,7 @@ mod tests {
             resp::RespType::BulkString(Some(value)),
             resp::RespType::Array(vec![]),
         ];
-        let response = handle(args, &store).await;
+        let response = Set.handle(args, &store).await;
         assert_eq!(
             resp::RespType::BulkError("ERR Failed to extract option for 'SET' command".into()),
             response
@@ -242,7 +261,7 @@ mod tests {
             resp::RespType::BulkString(Some(value)),
             resp::RespType::BulkString(Some("px".into())),
         ];
-        let response = handle(args, &store).await;
+        let response = Set.handle(args, &store).await;
         assert_eq!(
             resp::RespType::BulkError(
                 "ERR Missing milliseconds for PX option for 'SET' command".into()
@@ -264,7 +283,7 @@ mod tests {
             resp::RespType::BulkString(Some("px".into())),
             resp::RespType::BulkString(Some("abc".into())),
         ];
-        let response = handle(args, &store).await;
+        let response = Set.handle(args, &store).await;
         assert_eq!(
             resp::RespType::BulkError(
                 "ERR Failed to convert PX duration string to a number for 'SET' command".into()
