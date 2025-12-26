@@ -15,6 +15,13 @@ impl ProtocolVersion {
             x => Err(anyhow::anyhow!("Invalid protocol version: {}", x)),
         }
     }
+
+    pub fn to_version_number(&self) -> usize {
+        match self {
+            ProtocolVersion::V2 => 2,
+            ProtocolVersion::V3 => 3,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -65,6 +72,13 @@ mod tests {
                     result.unwrap_err().to_string()
                 );
             }
+        }
+
+        #[rstest]
+        #[case::v2(ProtocolVersion::V2, 2)]
+        #[case::v3(ProtocolVersion::V3, 3)]
+        fn test_version_to_number(#[case] version: ProtocolVersion, #[case] expected: usize) {
+            assert_eq!(expected, version.to_version_number());
         }
     }
 
