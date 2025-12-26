@@ -33,6 +33,7 @@ async fn main() {
         Box::new(commands::ping::Ping),
         Box::new(commands::rpush::Rpush),
         Box::new(commands::set::Set),
+        Box::new(commands::hello::Hello),
     ];
 
     let mut register = commands::Register::new();

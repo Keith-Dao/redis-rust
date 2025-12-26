@@ -6,6 +6,7 @@ use tokio::sync::RwLock;
 
 pub mod echo;
 pub mod get;
+pub mod hello;
 pub mod ping;
 pub mod rpush;
 pub mod set;
