@@ -1,6 +1,7 @@
 mod commands;
 mod handler;
 mod resp;
+mod state;
 mod store;
 
 use std::sync::Arc;

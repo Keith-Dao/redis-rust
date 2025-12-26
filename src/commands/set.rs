@@ -1,25 +1,25 @@
 //! This module contains the SET command.
-use crate::{commands::Command, resp, store};
+use crate::commands::Command;
 use anyhow::{Context, Result};
 
 /// Parses the SET options.
-fn parse_set_options<I: IntoIterator<Item = resp::RespType>>(
+fn parse_set_options<I: IntoIterator<Item = crate::resp::RespType>>(
     iter: I,
-) -> Result<(String, store::Entry)> {
+) -> Result<(String, crate::store::Entry)> {
     let mut iter = iter.into_iter();
 
-    let key = resp::extract_string(&iter.next().context("Missing key")?)
+    let key = crate::resp::extract_string(&iter.next().context("Missing key")?)
         .context("Failed to extract key")?;
 
-    let value = resp::extract_string(&iter.next().ok_or(anyhow::anyhow!("Missing value"))?)
+    let value = crate::resp::extract_string(&iter.next().ok_or(anyhow::anyhow!("Missing value"))?)
         .context("Failed to extract value")?;
-    let mut entry = store::Entry::new_string(value);
+    let mut entry = crate::store::Entry::new_string(value);
     while let Some(token) = &iter.next() {
-        let option = resp::extract_string(token).context("Failed to extract option")?;
+        let option = crate::resp::extract_string(token).context("Failed to extract option")?;
 
         match option.to_lowercase().as_str() {
             "px" => {
-                let duration = resp::extract_string(
+                let duration = crate::resp::extract_string(
                     &iter
                         .next()
                         .ok_or(anyhow::anyhow!("Missing milliseconds for PX option"))?,
@@ -51,17 +51,18 @@ impl Command for Set {
         &self,
         args: Vec<crate::resp::RespType>,
         store: &crate::store::SharedStore,
-    ) -> resp::RespType {
+        _: &mut crate::state::State,
+    ) -> crate::resp::RespType {
         let (key, entry) = match parse_set_options(args) {
             Ok(result) => result,
             Err(err) => {
                 log::error!("{err}");
-                return resp::RespType::BulkError(format!("ERR {err} for 'SET' command"));
+                return crate::resp::RespType::BulkError(format!("ERR {err} for 'SET' command"));
             }
         };
 
         store.lock().await.insert(key, entry);
-        resp::RespType::SimpleString("OK".into())
+        crate::resp::RespType::SimpleString("OK".into())
     }
 }
 
@@ -74,6 +75,11 @@ mod tests {
     #[fixture]
     fn store() -> crate::store::SharedStore {
         crate::store::new()
+    }
+
+    #[fixture]
+    fn state() -> crate::state::State {
+        crate::state::State::new()
     }
 
     #[fixture]
@@ -94,13 +100,18 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn test_handle_basic(store: crate::store::SharedStore, key: String, value: String) {
+    async fn test_handle_basic(
+        store: crate::store::SharedStore,
+        mut state: crate::state::State,
+        key: String,
+        value: String,
+    ) {
         let args = vec![
-            resp::RespType::SimpleString(key.clone()),
-            resp::RespType::SimpleString(value.clone()),
+            crate::resp::RespType::SimpleString(key.clone()),
+            crate::resp::RespType::SimpleString(value.clone()),
         ];
-        let response = Set.handle(args, &store).await;
-        assert_eq!(response, resp::RespType::SimpleString("OK".into()));
+        let response = Set.handle(args, &store, &mut state).await;
+        assert_eq!(response, crate::resp::RespType::SimpleString("OK".into()));
 
         let mut store = store.lock().await;
         let entry = store.get(&key).unwrap();
@@ -114,6 +125,7 @@ mod tests {
     #[tokio::test]
     async fn test_handle_with_px(
         store: crate::store::SharedStore,
+        mut state: crate::state::State,
         key: String,
         value: String,
         #[case] px: String,
@@ -121,13 +133,13 @@ mod tests {
         tokio::time::pause();
         let duration = 100;
         let args = vec![
-            resp::RespType::SimpleString(key.clone()),
-            resp::RespType::SimpleString(value.clone()),
-            resp::RespType::SimpleString(px),
-            resp::RespType::SimpleString(duration.to_string()), // 100 milliseconds
+            crate::resp::RespType::SimpleString(key.clone()),
+            crate::resp::RespType::SimpleString(value.clone()),
+            crate::resp::RespType::SimpleString(px),
+            crate::resp::RespType::SimpleString(duration.to_string()), // 100 milliseconds
         ];
-        let response = Set.handle(args, &store).await;
-        assert_eq!(response, resp::RespType::SimpleString("OK".into()));
+        let response = Set.handle(args, &store, &mut state).await;
+        assert_eq!(response, crate::resp::RespType::SimpleString("OK".into()));
 
         let mut store = store.lock().await;
         let entry = store.get(&key).unwrap();
@@ -142,6 +154,7 @@ mod tests {
     #[tokio::test]
     async fn test_handle_replace(
         store: crate::store::SharedStore,
+        mut state: crate::state::State,
         key: String,
         value: String,
         #[case] old_entry: crate::store::Entry,
@@ -149,11 +162,11 @@ mod tests {
         store.lock().await.insert(key.clone(), old_entry);
 
         let args = vec![
-            resp::RespType::SimpleString(key.clone()),
-            resp::RespType::SimpleString(value.clone()),
+            crate::resp::RespType::SimpleString(key.clone()),
+            crate::resp::RespType::SimpleString(value.clone()),
         ];
-        let response = Set.handle(args, &store).await;
-        assert_eq!(response, resp::RespType::SimpleString("OK".into()));
+        let response = Set.handle(args, &store, &mut state).await;
+        assert_eq!(response, crate::resp::RespType::SimpleString("OK".into()));
 
         let mut store = store.lock().await;
         let entry = store.get(&key).unwrap();
@@ -164,47 +177,63 @@ mod tests {
     // --- Errors ---
     #[rstest]
     #[tokio::test]
-    async fn test_handle_missing_key(store: crate::store::SharedStore) {
+    async fn test_handle_missing_key(
+        store: crate::store::SharedStore,
+        mut state: crate::state::State,
+    ) {
         let args = vec![];
-        let response = Set.handle(args, &store).await;
+        let response = Set.handle(args, &store, &mut state).await;
         assert_eq!(
-            resp::RespType::BulkError("ERR Missing key for 'SET' command".into()),
+            crate::resp::RespType::BulkError("ERR Missing key for 'SET' command".into()),
             response
         );
     }
 
     #[rstest]
     #[tokio::test]
-    async fn test_handle_invalid_key(store: crate::store::SharedStore) {
-        let args = vec![resp::RespType::Array(vec![])];
-        let response = Set.handle(args, &store).await;
+    async fn test_handle_invalid_key(
+        store: crate::store::SharedStore,
+        mut state: crate::state::State,
+    ) {
+        let args = vec![crate::resp::RespType::Array(vec![])];
+        let response = Set.handle(args, &store, &mut state).await;
         assert_eq!(
-            resp::RespType::BulkError("ERR Failed to extract key for 'SET' command".into()),
+            crate::resp::RespType::BulkError("ERR Failed to extract key for 'SET' command".into()),
             response
         );
     }
 
     #[rstest]
     #[tokio::test]
-    async fn test_handle_missing_value(store: crate::store::SharedStore, key: String) {
-        let args = vec![resp::RespType::BulkString(Some(key))];
-        let response = Set.handle(args, &store).await;
+    async fn test_handle_missing_value(
+        store: crate::store::SharedStore,
+        mut state: crate::state::State,
+        key: String,
+    ) {
+        let args = vec![crate::resp::RespType::BulkString(Some(key))];
+        let response = Set.handle(args, &store, &mut state).await;
         assert_eq!(
-            resp::RespType::BulkError("ERR Missing value for 'SET' command".into()),
+            crate::resp::RespType::BulkError("ERR Missing value for 'SET' command".into()),
             response
         );
     }
 
     #[rstest]
     #[tokio::test]
-    async fn test_handle_invalid_value(store: crate::store::SharedStore, key: String) {
+    async fn test_handle_invalid_value(
+        store: crate::store::SharedStore,
+        mut state: crate::state::State,
+        key: String,
+    ) {
         let args = vec![
-            resp::RespType::BulkString(Some(key)),
-            resp::RespType::Array(vec![]),
+            crate::resp::RespType::BulkString(Some(key)),
+            crate::resp::RespType::Array(vec![]),
         ];
-        let response = Set.handle(args, &store).await;
+        let response = Set.handle(args, &store, &mut state).await;
         assert_eq!(
-            resp::RespType::BulkError("ERR Failed to extract value for 'SET' command".into()),
+            crate::resp::RespType::BulkError(
+                "ERR Failed to extract value for 'SET' command".into()
+            ),
             response
         );
     }
@@ -213,17 +242,18 @@ mod tests {
     #[tokio::test]
     async fn test_handle_invalid_option(
         store: crate::store::SharedStore,
+        mut state: crate::state::State,
         key: String,
         value: String,
     ) {
         let args = vec![
-            resp::RespType::BulkString(Some(key)),
-            resp::RespType::BulkString(Some(value)),
-            resp::RespType::BulkString(Some("invalid option".into())),
+            crate::resp::RespType::BulkString(Some(key)),
+            crate::resp::RespType::BulkString(Some(value)),
+            crate::resp::RespType::BulkString(Some("invalid option".into())),
         ];
-        let response = Set.handle(args, &store).await;
+        let response = Set.handle(args, &store, &mut state).await;
         assert_eq!(
-            resp::RespType::BulkError(
+            crate::resp::RespType::BulkError(
                 "ERR invalid option is not a valid option for 'SET' command".into()
             ),
             response
@@ -234,17 +264,20 @@ mod tests {
     #[tokio::test]
     async fn test_handle_invalid_option_type(
         store: crate::store::SharedStore,
+        mut state: crate::state::State,
         key: String,
         value: String,
     ) {
         let args = vec![
-            resp::RespType::BulkString(Some(key)),
-            resp::RespType::BulkString(Some(value)),
-            resp::RespType::Array(vec![]),
+            crate::resp::RespType::BulkString(Some(key)),
+            crate::resp::RespType::BulkString(Some(value)),
+            crate::resp::RespType::Array(vec![]),
         ];
-        let response = Set.handle(args, &store).await;
+        let response = Set.handle(args, &store, &mut state).await;
         assert_eq!(
-            resp::RespType::BulkError("ERR Failed to extract option for 'SET' command".into()),
+            crate::resp::RespType::BulkError(
+                "ERR Failed to extract option for 'SET' command".into()
+            ),
             response
         );
     }
@@ -253,17 +286,18 @@ mod tests {
     #[tokio::test]
     async fn test_handle_missing_px_value(
         store: crate::store::SharedStore,
+        mut state: crate::state::State,
         key: String,
         value: String,
     ) {
         let args = vec![
-            resp::RespType::BulkString(Some(key)),
-            resp::RespType::BulkString(Some(value)),
-            resp::RespType::BulkString(Some("px".into())),
+            crate::resp::RespType::BulkString(Some(key)),
+            crate::resp::RespType::BulkString(Some(value)),
+            crate::resp::RespType::BulkString(Some("px".into())),
         ];
-        let response = Set.handle(args, &store).await;
+        let response = Set.handle(args, &store, &mut state).await;
         assert_eq!(
-            resp::RespType::BulkError(
+            crate::resp::RespType::BulkError(
                 "ERR Missing milliseconds for PX option for 'SET' command".into()
             ),
             response
@@ -274,18 +308,19 @@ mod tests {
     #[tokio::test]
     async fn test_handle_invalid_px_value(
         store: crate::store::SharedStore,
+        mut state: crate::state::State,
         key: String,
         value: String,
     ) {
         let args = vec![
-            resp::RespType::BulkString(Some(key)),
-            resp::RespType::BulkString(Some(value)),
-            resp::RespType::BulkString(Some("px".into())),
-            resp::RespType::BulkString(Some("abc".into())),
+            crate::resp::RespType::BulkString(Some(key)),
+            crate::resp::RespType::BulkString(Some(value)),
+            crate::resp::RespType::BulkString(Some("px".into())),
+            crate::resp::RespType::BulkString(Some("abc".into())),
         ];
-        let response = Set.handle(args, &store).await;
+        let response = Set.handle(args, &store, &mut state).await;
         assert_eq!(
-            resp::RespType::BulkError(
+            crate::resp::RespType::BulkError(
                 "ERR Failed to convert PX duration string to a number for 'SET' command".into()
             ),
             response
