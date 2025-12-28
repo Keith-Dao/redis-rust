@@ -65,7 +65,7 @@ impl Command for Hello {
             ),
             (
                 crate::resp::RespType::BulkString(Some("id".into())),
-                crate::resp::RespType::Integer(0), // TODO: Update this to not be hard coded.
+                crate::resp::RespType::Integer(state.client_id as i64),
             ),
             (
                 crate::resp::RespType::BulkString(Some("mode".into())),
@@ -95,7 +95,7 @@ mod test {
 
     #[fixture]
     fn state() -> crate::state::State {
-        crate::state::State::new()
+        crate::state::State::new(0)
     }
 
     // --- Tests ---
@@ -137,7 +137,7 @@ mod test {
                 crate::resp::RespType::Array(vec![]),
             ),
         ]),
-        crate::state::State { protocol_version: crate::state::ProtocolVersion::V2},
+        crate::state::State { protocol_version: crate::state::ProtocolVersion::V2, client_id: 0 },
         crate::state::ProtocolVersion::V2
     )]
     #[case::v2_preset_v2(
@@ -172,7 +172,7 @@ mod test {
                 crate::resp::RespType::Array(vec![]),
             ),
         ]),
-        crate::state::State { protocol_version: crate::state::ProtocolVersion::V2},
+        crate::state::State { protocol_version: crate::state::ProtocolVersion::V2, client_id: 0 },
         crate::state::ProtocolVersion::V2
     )]
     #[case::v3_preset_v2(
@@ -207,19 +207,19 @@ mod test {
                 crate::resp::RespType::Array(vec![]),
             ),
         ]),
-        crate::state::State { protocol_version: crate::state::ProtocolVersion::V3},
+        crate::state::State { protocol_version: crate::state::ProtocolVersion::V3, client_id: 0 },
         crate::state::ProtocolVersion::V2
     )]
     #[case::invalid_version_preset_v2(
         vec![crate::resp::RespType::SimpleString("a".into())],
         crate::resp::RespType::SimpleError("ERR Invalid protocol version: a for 'HELLO' command".into()),
-        crate::state::State { protocol_version: crate::state::ProtocolVersion::V2},
+        crate::state::State { protocol_version: crate::state::ProtocolVersion::V2, client_id: 0 },
         crate::state::ProtocolVersion::V2
     )]
     #[case::invalid_argument_preset_v2(
         vec![crate::resp::RespType::Null()],
         crate::resp::RespType::SimpleError("ERR Failed to parse protocol version for 'HELLO' command".into()),
-        crate::state::State { protocol_version: crate::state::ProtocolVersion::V2},
+        crate::state::State { protocol_version: crate::state::ProtocolVersion::V2, client_id: 0 },
         crate::state::ProtocolVersion::V2
     )]
     #[case::default_preset_v3(
@@ -254,7 +254,7 @@ mod test {
                 crate::resp::RespType::Array(vec![]),
             ),
         ]),
-        crate::state::State { protocol_version: crate::state::ProtocolVersion::V3},
+        crate::state::State { protocol_version: crate::state::ProtocolVersion::V3, client_id: 0 },
         crate::state::ProtocolVersion::V3
     )]
     #[case::v2_preset_v3(
@@ -289,7 +289,7 @@ mod test {
                 crate::resp::RespType::Array(vec![]),
             ),
         ]),
-        crate::state::State { protocol_version: crate::state::ProtocolVersion::V2},
+        crate::state::State { protocol_version: crate::state::ProtocolVersion::V2, client_id: 0 },
         crate::state::ProtocolVersion::V3
     )]
     #[case::v3_preset_v3(
@@ -324,19 +324,19 @@ mod test {
                 crate::resp::RespType::Array(vec![]),
             ),
         ]),
-        crate::state::State { protocol_version: crate::state::ProtocolVersion::V3},
+        crate::state::State { protocol_version: crate::state::ProtocolVersion::V3, client_id: 0 },
         crate::state::ProtocolVersion::V3,
     )]
     #[case::invalid_version_preset_v3(
         vec![crate::resp::RespType::SimpleString("a".into())],
         crate::resp::RespType::SimpleError("ERR Invalid protocol version: a for 'HELLO' command".into()),
-        crate::state::State { protocol_version: crate::state::ProtocolVersion::V3},
+        crate::state::State { protocol_version: crate::state::ProtocolVersion::V3, client_id: 0 },
         crate::state::ProtocolVersion::V3,
     )]
     #[case::invalid_argument_preset_v3(
         vec![crate::resp::RespType::Null()],
         crate::resp::RespType::SimpleError("ERR Failed to parse protocol version for 'HELLO' command".into()),
-        crate::state::State { protocol_version: crate::state::ProtocolVersion::V3},
+        crate::state::State { protocol_version: crate::state::ProtocolVersion::V3, client_id: 0 },
         crate::state::ProtocolVersion::V3,
     )]
     #[tokio::test]

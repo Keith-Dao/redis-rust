@@ -29,11 +29,11 @@ where
     T: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
     /// Creates a new RESP handler.
-    pub fn new(stream: T) -> Self {
+    pub fn new(stream: T, client_id: usize) -> Self {
         Self {
             stream,
             buffer: BytesMut::with_capacity(512),
-            state: crate::state::State::new(),
+            state: crate::state::State::new(client_id),
         }
     }
 
@@ -85,7 +85,7 @@ mod tests {
 
     #[fixture]
     fn state() -> crate::state::State {
-        crate::state::State::new()
+        crate::state::State::new(0)
     }
 
     #[fixture]
@@ -104,7 +104,7 @@ mod tests {
         RespHandler<tokio::io::DuplexStream>,
     ) {
         let (client_stream, server_stream) = tokio::io::duplex(512);
-        (client_stream, RespHandler::new(server_stream))
+        (client_stream, RespHandler::new(server_stream, 0))
     }
 
     fn make_handle_args(args: &Vec<crate::resp::RespType>) -> Vec<crate::resp::RespType> {
@@ -288,10 +288,10 @@ mod tests {
         #[rstest]
         fn test_handler_new() {
             let (_, server_stream) = tokio::io::duplex(512);
-            let handler = RespHandler::new(server_stream);
+            let handler = RespHandler::new(server_stream, 0);
             assert_eq!(handler.buffer.capacity(), 512);
             assert!(handler.buffer.is_empty());
-            assert_eq!(handler.state, crate::state::State::new());
+            assert_eq!(handler.state, crate::state::State::new(0));
         }
 
         #[rstest]

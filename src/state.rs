@@ -27,12 +27,14 @@ impl ProtocolVersion {
 #[derive(Debug, PartialEq)]
 pub struct State {
     pub protocol_version: ProtocolVersion,
+    pub client_id: usize,
 }
 
 impl State {
-    pub fn new() -> Self {
+    pub fn new(client_id: usize) -> Self {
         Self {
             protocol_version: ProtocolVersion::V2,
+            client_id,
         }
     }
 
@@ -88,23 +90,24 @@ mod tests {
         #[rstest]
         fn test_new() {
             assert_eq!(
-                State::new(),
+                State::new(0),
                 State {
-                    protocol_version: ProtocolVersion::V2
+                    protocol_version: ProtocolVersion::V2,
+                    client_id: 0
                 }
             );
         }
 
         #[rstest]
-        #[case::v2_str("2", State{ protocol_version: ProtocolVersion::V2 })]
-        #[case::v3_str("3", State{ protocol_version: ProtocolVersion::V3 })]
-        #[case::v2_string("2".to_string(), State{ protocol_version: ProtocolVersion::V2 })]
-        #[case::v3_string("3".to_string(), State{ protocol_version: ProtocolVersion::V3 })]
+        #[case::v2_str("2", State{ protocol_version: ProtocolVersion::V2, client_id: 0 })]
+        #[case::v3_str("3", State{ protocol_version: ProtocolVersion::V3, client_id: 0 })]
+        #[case::v2_string("2".to_string(), State{ protocol_version: ProtocolVersion::V2, client_id: 0 })]
+        #[case::v3_string("3".to_string(), State{ protocol_version: ProtocolVersion::V3, client_id: 0 })]
         fn test_update_protocol_version_from_string<T: AsRef<str>>(
             #[case] input: T,
             #[case] expected: State,
         ) {
-            let mut state = State::new();
+            let mut state = State::new(0);
             let result = state.update_version_from_string(input);
             assert!(result.is_ok());
             assert_eq!(expected, state);
@@ -117,7 +120,7 @@ mod tests {
             #[case] input: T,
             #[case] expected: String,
         ) {
-            let mut state = State::new();
+            let mut state = State::new(0);
             let result = state.update_version_from_string(&input);
             assert!(result.is_err());
             assert_eq!(result.unwrap_err().to_string(), expected);

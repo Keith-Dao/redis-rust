@@ -14,8 +14,9 @@ async fn handle_stream(
     stream: TcpStream,
     store: store::SharedStore,
     register: commands::SharedRegister,
+    client_id: usize,
 ) {
-    let mut handler = handler::RespHandler::new(stream);
+    let mut handler = handler::RespHandler::new(stream, client_id);
     handler.run(store, register).await;
 }
 
@@ -39,6 +40,7 @@ async fn main() {
     let mut register = commands::Register::new();
     register.register_multiple(commands);
     let register = Arc::new(RwLock::new(register));
+    let mut client_counter = 0;
 
     loop {
         match listener.accept().await {
@@ -47,8 +49,9 @@ async fn main() {
                 let store = store.clone();
                 let register = register.clone();
                 tokio::spawn(async move {
-                    handle_stream(stream, store, register).await;
+                    handle_stream(stream, store, register, client_counter).await;
                 });
+                client_counter += 1;
             }
             Err(e) => {
                 println!("error: {}", e);

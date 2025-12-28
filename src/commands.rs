@@ -166,7 +166,7 @@ mod tests {
 
     #[fixture]
     fn state() -> crate::state::State {
-        crate::state::State::new()
+        crate::state::State::new(0)
     }
 
     // --- Tests ---
