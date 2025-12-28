@@ -23,7 +23,7 @@ impl Command for Get {
         &self,
         args: Vec<crate::resp::RespType>,
         store: &crate::store::SharedStore,
-        _: &mut crate::state::State,
+        state: &mut crate::state::State,
     ) -> crate::resp::RespType {
         let key = match parse_get_options(args.into_iter()) {
             Ok(result) => result,
@@ -34,7 +34,10 @@ impl Command for Get {
         };
 
         let mut store = store.lock().await;
-        let missing_value = crate::resp::RespType::Null();
+        let missing_value = match state.protocol_version {
+            crate::state::ProtocolVersion::V2 => crate::resp::RespType::BulkString(None),
+            crate::state::ProtocolVersion::V3 => crate::resp::RespType::Null(),
+        };
         match store.get(&key) {
             Some(crate::store::Entry {
                 value,
@@ -103,25 +106,41 @@ mod tests {
     }
 
     #[rstest]
+    #[case::v2(
+        crate::state::ProtocolVersion::V2,
+        crate::resp::RespType::BulkString(None)
+    )]
+    #[case::v3(crate::state::ProtocolVersion::V3, crate::resp::RespType::Null())]
     #[tokio::test]
     async fn test_handle_non_existing(
         store: crate::store::SharedStore,
         mut state: crate::state::State,
         key: String,
+        #[case] protocol_version: crate::state::ProtocolVersion,
+        #[case] expected: crate::resp::RespType,
     ) {
+        state.protocol_version = protocol_version;
         let args = vec![crate::resp::RespType::SimpleString(key)];
         let response = Get.handle(args, &store, &mut state).await;
-        assert_eq!(crate::resp::RespType::Null(), response);
+        assert_eq!(expected, response);
     }
 
     #[rstest]
+    #[case::v2(
+        crate::state::ProtocolVersion::V2,
+        crate::resp::RespType::BulkString(None)
+    )]
+    #[case::v3(crate::state::ProtocolVersion::V3, crate::resp::RespType::Null())]
     #[tokio::test]
     async fn test_handle_expired_key(
         store: crate::store::SharedStore,
         mut state: crate::state::State,
         key: String,
         value: String,
+        #[case] protocol_version: crate::state::ProtocolVersion,
+        #[case] expected: crate::resp::RespType,
     ) {
+        state.protocol_version = protocol_version;
         let deletion_time = 0u32;
         store.lock().await.insert(
             key.clone(),
@@ -130,19 +149,27 @@ mod tests {
 
         let args = vec![crate::resp::RespType::SimpleString(key.clone())];
         let response = Get.handle(args, &store, &mut state).await;
-        assert_eq!(crate::resp::RespType::Null(), response);
+        assert_eq!(expected, response);
 
         assert!(store.lock().await.get(&key).is_none());
     }
 
     #[rstest]
+    #[case::v2(
+        crate::state::ProtocolVersion::V2,
+        crate::resp::RespType::BulkString(None)
+    )]
+    #[case::v3(crate::state::ProtocolVersion::V3, crate::resp::RespType::Null())]
     #[tokio::test]
     async fn test_handle_expiry(
         store: crate::store::SharedStore,
         mut state: crate::state::State,
         key: String,
         value: String,
+        #[case] protocol_version: crate::state::ProtocolVersion,
+        #[case] expected: crate::resp::RespType,
     ) {
+        state.protocol_version = protocol_version;
         tokio::time::pause();
         let deletion_time = 300;
         store.lock().await.insert(
@@ -156,7 +183,7 @@ mod tests {
 
         tokio::time::advance(tokio::time::Duration::from_millis(deletion_time)).await;
         let response = Get.handle(args, &store, &mut state).await;
-        assert_eq!(crate::resp::RespType::Null(), response);
+        assert_eq!(expected, response);
         assert!(store.lock().await.get("expiredkey").is_none());
     }
 
