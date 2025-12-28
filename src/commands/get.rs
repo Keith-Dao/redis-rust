@@ -29,7 +29,7 @@ impl Command for Get {
             Ok(result) => result,
             Err(err) => {
                 log::error!("{err}");
-                return crate::resp::RespType::BulkError(format!("ERR {err} for 'GET' command"));
+                return crate::resp::RespType::SimpleError(format!("ERR {err} for 'GET' command"));
             }
         };
 
@@ -43,9 +43,9 @@ impl Command for Get {
                 crate::store::EntryValue::String(value) => {
                     crate::resp::RespType::BulkString(Some(value.clone()))
                 }
-                _ => {
-                    crate::resp::RespType::BulkError("WRONGTYPE stored type is not a string".into())
-                }
+                _ => crate::resp::RespType::SimpleError(
+                    "WRONGTYPE stored type is not a string".into(),
+                ),
             },
             _ => missing_value,
         }
@@ -167,7 +167,8 @@ mod tests {
         mut state: crate::state::State,
     ) {
         let args = vec![];
-        let expected = crate::resp::RespType::BulkError("ERR Missing key for 'GET' command".into());
+        let expected =
+            crate::resp::RespType::SimpleError("ERR Missing key for 'GET' command".into());
         let response = Get.handle(args.clone(), &store, &mut state).await;
         assert_eq!(expected, response);
     }
@@ -179,8 +180,9 @@ mod tests {
         mut state: crate::state::State,
     ) {
         let args = vec![crate::resp::RespType::Array(vec![])];
-        let expected =
-            crate::resp::RespType::BulkError("ERR Failed to extract key for 'GET' command".into());
+        let expected = crate::resp::RespType::SimpleError(
+            "ERR Failed to extract key for 'GET' command".into(),
+        );
         let response = Get.handle(args.clone(), &store, &mut state).await;
         assert_eq!(expected, response);
     }
@@ -198,7 +200,7 @@ mod tests {
             .insert(key.clone(), crate::store::Entry::new_list());
         let args = vec![crate::resp::RespType::BulkString(Some(key.clone()))];
         let expected =
-            crate::resp::RespType::BulkError("WRONGTYPE stored type is not a string".into());
+            crate::resp::RespType::SimpleError("WRONGTYPE stored type is not a string".into());
         let response = Get.handle(args, &store, &mut state).await;
         assert_eq!(expected, response);
     }

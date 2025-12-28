@@ -53,7 +53,6 @@ pub enum RespType {
     SimpleError(String),
     BulkString(Option<String>),
     Array(Vec<RespType>),
-    BulkError(String),
     Integer(i64),
     Map(Vec<(RespType, RespType)>),
     Null(),
@@ -111,32 +110,7 @@ impl RespType {
         Ok(RespType::BulkString(Some(message)))
     }
 
-    /// Parses a buffer for a bulk error.
-    fn parse_bulk_error(buffer: &mut BytesMut) -> Result<RespType> {
-        trace!("Parsing bulk error: {:?}", buffer);
-        let expected_message_length = parse_num(
-            read_until_crlf(buffer)
-                .context(format!("Bulk error missing length segment: {:?}.", buffer))?,
-        )
-        .context("Failed to parse bulk error length.")?
-            as usize;
-
-        if buffer.len() < expected_message_length {
-            return Err(anyhow::anyhow!(
-                "Message did not match the expected length. Expected: {}, got: {}.",
-                expected_message_length,
-                buffer.len()
-            ));
-        }
-
-        let message = String::from_utf8(buffer.split_to(expected_message_length).to_vec())?;
-        if buffer.len() < 2 || buffer.split_to(2).as_ref() != b"\r\n" {
-            return Err(anyhow::anyhow!("Expected CRLF."));
-        }
-        Ok(RespType::BulkError(message))
-    }
-
-    /// Parses a buffer for a bulk error.
+    /// Parses a buffer for an integer.
     fn parse_integer(buffer: &mut BytesMut) -> Result<RespType> {
         trace!("Parsing integer: {:?}", buffer);
 
@@ -216,7 +190,6 @@ impl RespType {
                 '+' => Self::parse_simple_string(buffer),
                 '-' => Self::parse_simple_error(buffer),
                 '$' => Self::parse_bulk_string(buffer),
-                '!' => Self::parse_bulk_error(buffer),
                 ':' => Self::parse_integer(buffer),
                 '%' => Self::parse_map(buffer),
                 '*' => Self::parse_array(buffer),
@@ -245,7 +218,6 @@ impl RespType {
                         .fold(String::new(), |result, x| result + &x)
                 )
             }
-            Self::BulkError(s) => format!("!{}\r\n{s}\r\n", s.len()),
             Self::Integer(num) => format!(":{num}\r\n"),
             Self::Map(map) => {
                 format!(
@@ -461,41 +433,6 @@ mod tests {
         b"$4",
         Err(anyhow::anyhow!("Bulk string missing length segment: b\"4\"."))
     )]
-    // Bulk errors
-    #[case::bulk_error(b"!4\r\nTest\r\n", Ok(RespType::BulkError("Test".into())))]
-    #[case::bulk_error_empty(b"!0\r\n\r\n", Ok(RespType::BulkError("".into())))]
-    #[case::bulk_error_long(
-        b"!21\r\nReally long text here\r\n",
-        Ok(RespType::BulkError("Really long text here".into()))
-    )]
-    #[case::bulk_error_with_crlf(
-        b"!13\r\nTest\r\nAnother\r\n",
-        Ok(RespType::BulkError("Test\r\nAnother".into()))
-    )]
-    #[case::bulk_error_mismatch_length(
-        b"!7\r\nTest\r\n",
-        Err(anyhow::anyhow!("Message did not match the expected length. Expected: 7, got: 6."))
-    )]
-    #[case::bulk_error_invalid_length(
-        b"!4a\r\nTest\r\n",
-        Err(anyhow::anyhow!("Failed to parse bulk error length."))
-    )]
-    #[case::bulk_error_missing_crlf(
-        b"!4\r\nTest",
-        Err(anyhow::anyhow!("Expected CRLF."))
-    )]
-    #[case::bulk_error_missing_lf(
-        b"!4\r\nTest\r",
-        Err(anyhow::anyhow!("Expected CRLF."))
-    )]
-    #[case::bulk_error_expected_crlf(
-        b"!4\r\nTestab",
-        Err(anyhow::anyhow!("Expected CRLF."))
-    )]
-    #[case::bulk_error_missing_length(
-        b"!4",
-        Err(anyhow::anyhow!("Bulk error missing length segment: b\"4\"."))
-    )]
     // Integer
     #[case::integer_zero(b":0\r\n", Ok(RespType::Integer(0)))]
     #[case::integer_positive(b":1\r\n", Ok(RespType::Integer(1)))]
@@ -573,10 +510,6 @@ mod tests {
     #[case::bulk_string_empty(RespType::BulkString(Some("".into())), "$0\r\n\r\n")]
     #[case::bulk_string_with_clrf(RespType::BulkString(Some("Test\r\nAnother".into())), "$13\r\nTest\r\nAnother\r\n")]
     #[case::bulk_string_null(RespType::BulkString(None), "$-1\r\n")]
-    // Bulk errors
-    #[case::simple_string(RespType::BulkError("Test".into()), "!4\r\nTest\r\n")]
-    #[case::simple_string_empty(RespType::BulkError("".into()), "!0\r\n\r\n")]
-    #[case::simple_string(RespType::BulkError("SYNTAX invalid syntax".into()), "!21\r\nSYNTAX invalid syntax\r\n")]
     // Integers
     #[case::integer_zero(RespType::Integer(0), ":0\r\n")]
     #[case::integer_positive(RespType::Integer(123), ":123\r\n")]
@@ -601,10 +534,9 @@ mod tests {
         RespType::Array(vec![
             RespType::SimpleString("Test".into()),
             RespType::BulkString(Some("".into())),
-            RespType::BulkError("Error".into()),
             RespType::Integer(-123),
         ]),
-        "*4\r\n+Test\r\n$0\r\n\r\n!5\r\nError\r\n:-123\r\n"
+        "*3\r\n+Test\r\n$0\r\n\r\n:-123\r\n"
     )]
     // Null
     #[case::null(RespType::Null(), "_\r\n")]

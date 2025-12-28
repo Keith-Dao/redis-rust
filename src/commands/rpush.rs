@@ -42,7 +42,9 @@ impl Command for Rpush {
             Ok(result) => result,
             Err(err) => {
                 log::error!("{err}");
-                return crate::resp::RespType::BulkError(format!("ERR {err} for 'RPUSH' command"));
+                return crate::resp::RespType::SimpleError(format!(
+                    "ERR {err} for 'RPUSH' command"
+                ));
             }
         };
 
@@ -56,7 +58,7 @@ impl Command for Rpush {
                 list.len()
             }
             _ => {
-                return crate::resp::RespType::BulkError(format!(
+                return crate::resp::RespType::SimpleError(format!(
                     "WRONGTYPE Entry at key {key} is not a list"
                 ))
             }
@@ -189,7 +191,7 @@ mod test {
     async fn text_missing_key(store: crate::store::SharedStore, mut state: crate::state::State) {
         let args = vec![];
         let expected =
-            crate::resp::RespType::BulkError("ERR Missing key for 'RPUSH' command".into());
+            crate::resp::RespType::SimpleError("ERR Missing key for 'RPUSH' command".into());
         let response = Rpush.handle(args, &store, &mut state).await;
         assert_eq!(expected, response);
     }
@@ -198,7 +200,7 @@ mod test {
     #[tokio::test]
     async fn text_invalid_key(store: crate::store::SharedStore, mut state: crate::state::State) {
         let args = vec![crate::resp::RespType::Array(vec![])];
-        let expected = crate::resp::RespType::BulkError(
+        let expected = crate::resp::RespType::SimpleError(
             "ERR Failed to extract key for 'RPUSH' command".into(),
         );
         let response = Rpush.handle(args, &store, &mut state).await;
@@ -213,7 +215,7 @@ mod test {
         key: String,
     ) {
         let args = vec![crate::resp::RespType::SimpleString(key)];
-        let expected = crate::resp::RespType::BulkError(
+        let expected = crate::resp::RespType::SimpleError(
             "ERR At least one value must be provided for 'RPUSH' command".into(),
         );
         let response = Rpush.handle(args, &store, &mut state).await;
@@ -231,7 +233,7 @@ mod test {
             crate::resp::RespType::SimpleString(key),
             crate::resp::RespType::Array(vec![]),
         ];
-        let expected = crate::resp::RespType::BulkError(
+        let expected = crate::resp::RespType::SimpleError(
             "ERR Failed to extract value for 'RPUSH' command".into(),
         );
         let response = Rpush.handle(args, &store, &mut state).await;
@@ -254,8 +256,9 @@ mod test {
         );
 
         let args = make_args(&key, &values);
-        let expected =
-            crate::resp::RespType::BulkError(format!("WRONGTYPE Entry at key {key} is not a list"));
+        let expected = crate::resp::RespType::SimpleError(format!(
+            "WRONGTYPE Entry at key {key} is not a list"
+        ));
         let response = Rpush.handle(args, &store, &mut state).await;
         assert_eq!(expected, response);
     }

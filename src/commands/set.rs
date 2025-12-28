@@ -57,7 +57,7 @@ impl Command for Set {
             Ok(result) => result,
             Err(err) => {
                 log::error!("{err}");
-                return crate::resp::RespType::BulkError(format!("ERR {err} for 'SET' command"));
+                return crate::resp::RespType::SimpleError(format!("ERR {err} for 'SET' command"));
             }
         };
 
@@ -184,7 +184,7 @@ mod tests {
         let args = vec![];
         let response = Set.handle(args, &store, &mut state).await;
         assert_eq!(
-            crate::resp::RespType::BulkError("ERR Missing key for 'SET' command".into()),
+            crate::resp::RespType::SimpleError("ERR Missing key for 'SET' command".into()),
             response
         );
     }
@@ -198,7 +198,9 @@ mod tests {
         let args = vec![crate::resp::RespType::Array(vec![])];
         let response = Set.handle(args, &store, &mut state).await;
         assert_eq!(
-            crate::resp::RespType::BulkError("ERR Failed to extract key for 'SET' command".into()),
+            crate::resp::RespType::SimpleError(
+                "ERR Failed to extract key for 'SET' command".into()
+            ),
             response
         );
     }
@@ -213,7 +215,7 @@ mod tests {
         let args = vec![crate::resp::RespType::BulkString(Some(key))];
         let response = Set.handle(args, &store, &mut state).await;
         assert_eq!(
-            crate::resp::RespType::BulkError("ERR Missing value for 'SET' command".into()),
+            crate::resp::RespType::SimpleError("ERR Missing value for 'SET' command".into()),
             response
         );
     }
@@ -231,7 +233,7 @@ mod tests {
         ];
         let response = Set.handle(args, &store, &mut state).await;
         assert_eq!(
-            crate::resp::RespType::BulkError(
+            crate::resp::RespType::SimpleError(
                 "ERR Failed to extract value for 'SET' command".into()
             ),
             response
@@ -253,7 +255,7 @@ mod tests {
         ];
         let response = Set.handle(args, &store, &mut state).await;
         assert_eq!(
-            crate::resp::RespType::BulkError(
+            crate::resp::RespType::SimpleError(
                 "ERR invalid option is not a valid option for 'SET' command".into()
             ),
             response
@@ -275,7 +277,7 @@ mod tests {
         ];
         let response = Set.handle(args, &store, &mut state).await;
         assert_eq!(
-            crate::resp::RespType::BulkError(
+            crate::resp::RespType::SimpleError(
                 "ERR Failed to extract option for 'SET' command".into()
             ),
             response
@@ -297,7 +299,7 @@ mod tests {
         ];
         let response = Set.handle(args, &store, &mut state).await;
         assert_eq!(
-            crate::resp::RespType::BulkError(
+            crate::resp::RespType::SimpleError(
                 "ERR Missing milliseconds for PX option for 'SET' command".into()
             ),
             response
@@ -320,7 +322,7 @@ mod tests {
         ];
         let response = Set.handle(args, &store, &mut state).await;
         assert_eq!(
-            crate::resp::RespType::BulkError(
+            crate::resp::RespType::SimpleError(
                 "ERR Failed to convert PX duration string to a number for 'SET' command".into()
             ),
             response
