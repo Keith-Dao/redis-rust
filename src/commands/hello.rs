@@ -49,7 +49,6 @@ impl Command for Hello {
             }
         }
 
-        // TODO: Consider moving this for state to manage.
         crate::resp::RespType::Map(vec![
             (
                 crate::resp::RespType::BulkString(Some("server".into())),

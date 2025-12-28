@@ -1,6 +1,7 @@
 //! This module contains the state for each session.
 use anyhow::Result;
 
+/// The protocol version to use for the current connection.
 #[derive(Debug, PartialEq)]
 pub enum ProtocolVersion {
     V2,
@@ -24,6 +25,7 @@ impl ProtocolVersion {
     }
 }
 
+/// The state of the current connection.
 #[derive(Debug, PartialEq)]
 pub struct State {
     pub protocol_version: ProtocolVersion,
@@ -31,6 +33,7 @@ pub struct State {
 }
 
 impl State {
+    /// Creates a new state.
     pub fn new(client_id: usize) -> Self {
         Self {
             protocol_version: ProtocolVersion::V2,
@@ -38,6 +41,7 @@ impl State {
         }
     }
 
+    /// Updates the protocol version from a string.
     pub fn update_version_from_string<T: AsRef<str>>(&mut self, version: T) -> Result<()> {
         let version = ProtocolVersion::from_string(version)?;
         self.protocol_version = version;
