@@ -1,5 +1,5 @@
 //! This module contains the PING command.
-use crate::{commands::Command, resp, store};
+use crate::commands::Command;
 
 pub struct Ping;
 
@@ -10,8 +10,13 @@ impl Command for Ping {
     }
 
     /// Handles the PING command.
-    async fn handle(&self, _: Vec<resp::RespType>, _: &store::SharedStore) -> resp::RespType {
-        resp::RespType::SimpleString("PONG".into())
+    async fn handle(
+        &self,
+        _: Vec<crate::resp::RespType>,
+        _: &crate::store::SharedStore,
+        _: &mut crate::state::State,
+    ) -> crate::resp::RespType {
+        crate::resp::RespType::SimpleString("PONG".into())
     }
 }
 
@@ -25,6 +30,11 @@ mod test {
         crate::store::new()
     }
 
+    #[fixture]
+    fn state() -> crate::state::State {
+        crate::state::State::new(0)
+    }
+
     // --- Tests ---
     #[rstest]
     fn test_name() {
@@ -33,10 +43,10 @@ mod test {
 
     #[rstest]
     #[tokio::test]
-    async fn test_handle(store: crate::store::SharedStore) {
+    async fn test_handle(store: crate::store::SharedStore, mut state: crate::state::State) {
         assert_eq!(
-            resp::RespType::SimpleString("PONG".into()),
-            Ping.handle(vec![], &store).await
+            crate::resp::RespType::SimpleString("PONG".into()),
+            Ping.handle(vec![], &store, &mut state).await
         );
     }
 }

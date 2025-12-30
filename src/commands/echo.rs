@@ -1,5 +1,5 @@
 //! This module contains the ECHO command.
-use crate::{commands::Command, resp, store};
+use crate::commands::Command;
 
 pub struct Echo;
 
@@ -10,13 +10,18 @@ impl Command for Echo {
     }
 
     /// Handles the ECHO command.
-    async fn handle(&self, args: Vec<resp::RespType>, _: &store::SharedStore) -> resp::RespType {
+    async fn handle(
+        &self,
+        args: Vec<crate::resp::RespType>,
+        _: &crate::store::SharedStore,
+        _: &mut crate::state::State,
+    ) -> crate::resp::RespType {
         if let Some(message_token) = args.first() {
-            let message = resp::extract_string(message_token).ok();
-            resp::RespType::BulkString(message)
+            let message = crate::resp::extract_string(message_token).ok();
+            crate::resp::RespType::BulkString(message)
         } else {
             log::trace!("No message provided.");
-            resp::RespType::BulkString(None)
+            crate::resp::RespType::BulkString(None)
         }
     }
 }
@@ -34,6 +39,11 @@ mod test {
         crate::store::new()
     }
 
+    #[fixture]
+    fn state() -> crate::state::State {
+        crate::state::State::new(0)
+    }
+
     // --- Tests ---
     #[rstest]
     fn test_name() {
@@ -42,45 +52,45 @@ mod test {
 
     #[rstest]
     #[tokio::test]
-    async fn test_simple_string(store: crate::store::SharedStore) {
+    async fn test_simple_string(store: crate::store::SharedStore, mut state: crate::state::State) {
         let message = "Test";
-        let args = vec![resp::RespType::SimpleString(message.into())];
+        let args = vec![crate::resp::RespType::SimpleString(message.into())];
         assert_eq!(
-            resp::RespType::BulkString(Some(message.into())),
-            Echo.handle(args, &store).await
+            crate::resp::RespType::BulkString(Some(message.into())),
+            Echo.handle(args, &store, &mut state).await
         );
     }
 
     #[rstest]
     #[tokio::test]
-    async fn test_bulk_string(store: crate::store::SharedStore) {
+    async fn test_bulk_string(store: crate::store::SharedStore, mut state: crate::state::State) {
         let message = "Test";
-        let args = vec![resp::RespType::BulkString(Some(message.into()))];
+        let args = vec![crate::resp::RespType::BulkString(Some(message.into()))];
         assert_eq!(
-            resp::RespType::BulkString(Some(message.into())),
-            Echo.handle(args, &store).await
+            crate::resp::RespType::BulkString(Some(message.into())),
+            Echo.handle(args, &store, &mut state).await
         );
     }
 
     #[rstest]
     #[tokio::test]
-    async fn test_missing(store: crate::store::SharedStore) {
+    async fn test_missing(store: crate::store::SharedStore, mut state: crate::state::State) {
         let args = vec![];
         assert_eq!(
-            resp::RespType::BulkString(None),
-            Echo.handle(args, &store).await
+            crate::resp::RespType::BulkString(None),
+            Echo.handle(args, &store, &mut state).await
         );
     }
 
     #[rstest]
     #[tokio::test]
-    async fn test_invalid(store: crate::store::SharedStore) {
-        let args = vec![resp::RespType::Array(vec![resp::RespType::BulkString(
-            Some("Test".into()),
-        )])];
+    async fn test_invalid(store: crate::store::SharedStore, mut state: crate::state::State) {
+        let args = vec![crate::resp::RespType::Array(vec![
+            crate::resp::RespType::BulkString(Some("Test".into())),
+        ])];
         assert_eq!(
-            resp::RespType::BulkString(None),
-            Echo.handle(args, &store).await
+            crate::resp::RespType::BulkString(None),
+            Echo.handle(args, &store, &mut state).await
         );
     }
 }

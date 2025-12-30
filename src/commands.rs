@@ -6,6 +6,7 @@ use tokio::sync::RwLock;
 
 pub mod echo;
 pub mod get;
+pub mod hello;
 pub mod ping;
 pub mod rpush;
 pub mod set;
@@ -21,6 +22,7 @@ pub trait Command: Send + Sync {
         &self,
         args: Vec<crate::resp::RespType>,
         store: &crate::store::SharedStore,
+        state: &mut crate::state::State,
     ) -> crate::resp::RespType;
 }
 
@@ -51,9 +53,10 @@ impl Register {
         command: String,
         args: Vec<crate::resp::RespType>,
         store: &crate::store::SharedStore,
+        state: &mut crate::state::State,
     ) -> crate::resp::RespType {
         match self.0.get(&command.to_uppercase()) {
-            Some(command) => command.handle(args, store).await,
+            Some(command) => command.handle(args, store, state).await,
             _ => {
                 crate::resp::RespType::SimpleError(format!("ERR Command ({command}) is not valid"))
             }
@@ -130,6 +133,7 @@ mod tests {
             &self,
             _: Vec<crate::resp::RespType>,
             _: &crate::store::SharedStore,
+            _: &mut crate::state::State,
         ) -> crate::resp::RespType {
             crate::resp::RespType::SimpleString("A".into())
         }
@@ -148,6 +152,7 @@ mod tests {
             &self,
             _: Vec<crate::resp::RespType>,
             _: &crate::store::SharedStore,
+            _: &mut crate::state::State,
         ) -> crate::resp::RespType {
             crate::resp::RespType::SimpleString("B".into())
         }
@@ -157,6 +162,11 @@ mod tests {
     #[fixture]
     fn store() -> crate::store::SharedStore {
         crate::store::new()
+    }
+
+    #[fixture]
+    fn state() -> crate::state::State {
+        crate::state::State::new(0)
     }
 
     // --- Tests ---
@@ -201,12 +211,16 @@ mod tests {
     #[tokio::test]
     async fn test_handle(
         store: crate::store::SharedStore,
+        mut state: crate::state::State,
         #[case] command: String,
         #[case] expected: crate::resp::RespType,
     ) {
         let mut register = Register::new();
         register.register_multiple(vec![Box::new(A), Box::new(B)]);
-        assert_eq!(expected, register.handle(command, vec![], &store).await);
+        assert_eq!(
+            expected,
+            register.handle(command, vec![], &store, &mut state).await
+        );
     }
 
     #[rstest]
