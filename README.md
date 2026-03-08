@@ -87,3 +87,18 @@ codecrafters-redis-rust/
 ├── Cargo.lock                # Dependency lock file
 └── README.md                 # This file
 ```
+
+## Future Potential
+
+While this project is a functional Redis server implementation, there are many opportunities to expand its capabilities:
+
+- **Persistence:** Implement AOF (Append Only File) or RDB snapshots to persist data across server restarts.
+- **Data Types:** Add support for more complex Redis data types such as Hashes, Sets, and Sorted Sets.
+- **Pub/Sub:** Implement the Publish/Subscribe messaging paradigm.
+- **Optimized Concurrency:** Further refine the lock granularity to handle higher throughput under heavy contention.
+- **Command Support:** Implement more of the extensive Redis command set (e.g., `INCR`, `DEL`, `KEYS`).
+- **Plugin Support:** Implement a plugin system to allow users to enable custom commands.
+- **Logging:** Improve observability with structured logging.
+- **Monitoring:** Add metrics collection and system monitoring endpoints.
+- **CLI Configuration:** Enable command-line arguments to customize server settings, such as port number and log levels, at runtime.
+- **Error Handling:** Implement robust, actionable error reporting and comprehensive logging for all server operations.
