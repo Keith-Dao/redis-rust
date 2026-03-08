@@ -73,12 +73,15 @@ codecrafters-redis-rust/
 │   ├── commands/             # Individual command implementations (e.g., PING, ECHO, GET, SET)
 │   │   ├── echo.rs
 │   │   ├── get.rs
+│   │   ├── hello.rs
 │   │   ├── ping.rs
+│   │   ├── rpush.rs
 │   │   └── set.rs
 │   ├── commands.rs           # Aggregates and dispatches different commands
 │   ├── handler.rs            # Handles incoming client connections and command parsing
 │   ├── main.rs               # Main entry point of the server
 │   ├── resp.rs               # Handles Redis Serialization Protocol (RESP) encoding and decoding
+│   ├── state.rs              # Manages server state
 │   └── store.rs              # Manages the key-value store and expiration logic
 ├── Cargo.toml                # Rust project manifest
 ├── Cargo.lock                # Dependency lock file
