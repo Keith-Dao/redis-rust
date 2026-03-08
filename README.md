@@ -11,6 +11,8 @@ This Redis server implementation in Rust supports the following commands:
 - `SET <key> <value> [PX <milliseconds>]`: Sets the string value of a key.
   - `PX`: Set the specified expire time, in milliseconds.
 - `GET <key>`: Get the string value of a key.
+- `RPUSH <key> <value>`: Appends one or multiple values to a list.
+- `HELLO <proto>`: Negotiates the RESP protocol version.
 
 ## Getting Started
 
@@ -71,14 +73,32 @@ codecrafters-redis-rust/
 │   ├── commands/             # Individual command implementations (e.g., PING, ECHO, GET, SET)
 │   │   ├── echo.rs
 │   │   ├── get.rs
+│   │   ├── hello.rs
 │   │   ├── ping.rs
+│   │   ├── rpush.rs
 │   │   └── set.rs
 │   ├── commands.rs           # Aggregates and dispatches different commands
 │   ├── handler.rs            # Handles incoming client connections and command parsing
 │   ├── main.rs               # Main entry point of the server
 │   ├── resp.rs               # Handles Redis Serialization Protocol (RESP) encoding and decoding
+│   ├── state.rs              # Manages server state
 │   └── store.rs              # Manages the key-value store and expiration logic
 ├── Cargo.toml                # Rust project manifest
 ├── Cargo.lock                # Dependency lock file
 └── README.md                 # This file
 ```
+
+## Future Potential
+
+While this project is a functional Redis server implementation, there are many opportunities to expand its capabilities:
+
+- **Persistence:** Implement AOF (Append Only File) or RDB snapshots to persist data across server restarts.
+- **Data Types:** Add support for more complex Redis data types such as Hashes, Sets, and Sorted Sets.
+- **Pub/Sub:** Implement the Publish/Subscribe messaging paradigm.
+- **Optimized Concurrency:** Further refine the lock granularity to handle higher throughput under heavy contention.
+- **Command Support:** Implement more of the extensive Redis command set (e.g., `INCR`, `DEL`, `KEYS`).
+- **Plugin Support:** Implement a plugin system to allow users to enable custom commands.
+- **Logging:** Improve observability with structured logging.
+- **Monitoring:** Add metrics collection and system monitoring endpoints.
+- **CLI Configuration:** Enable command-line arguments to customize server settings, such as port number and log levels, at runtime.
+- **Error Handling:** Implement robust, actionable error reporting and comprehensive logging for all server operations.
