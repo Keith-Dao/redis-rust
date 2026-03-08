@@ -11,6 +11,8 @@ This Redis server implementation in Rust supports the following commands:
 - `SET <key> <value> [PX <milliseconds>]`: Sets the string value of a key.
   - `PX`: Set the specified expire time, in milliseconds.
 - `GET <key>`: Get the string value of a key.
+- `RPUSH <key> <value>`: Appends one or multiple values to a list.
+- `HELLO <proto>`: Negotiates the RESP protocol version.
 
 ## Getting Started
 
